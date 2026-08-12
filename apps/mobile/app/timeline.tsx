@@ -14,7 +14,10 @@ const STATUS_LABEL: Record<TimelineEntryDto["status"], string> = {
   ACTIVE: "В процессе",
   COMPLETED: "Завершён",
   FAILED: "Провален",
+  ARCHIVED: "В архиве",
 };
+
+const KIND_ICON: Record<TimelineEntryDto["kind"], string> = { QUEST: "🎯", EPIC_WIN: "🏆" };
 
 export default function TimelineScreen() {
   const api = useApi();
@@ -43,19 +46,22 @@ export default function TimelineScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
       <ScreenTitle style={styles.title}>Таймлайн</ScreenTitle>
-      <Text style={styles.hint}>Все квесты с дедлайном, по всем твоим Epic Win — ближайшие сверху.</Text>
+      <Text style={styles.hint}>Квесты и Эпики с дедлайном, по всем твоим целям — ближайшие сверху.</Text>
 
-      {entries.length === 0 && !loading ? (
-        <Text style={styles.emptyText}>Пока нет квестов с дедлайном.</Text>
-      ) : null}
+      {entries.length === 0 && !loading ? <Text style={styles.emptyText}>Пока нет дедлайнов.</Text> : null}
 
       {entries.map((entry) => {
         const overdue = entry.status === "ACTIVE" && isOverdue(entry.deadline);
         return (
-          <Pressable key={entry.questId} onPress={() => router.push(`/quests/${entry.questId}`)}>
+          <Pressable
+            key={`${entry.kind}-${entry.id}`}
+            onPress={() => router.push(entry.kind === "QUEST" ? `/quests/${entry.id}` : `/epic-wins/${entry.id}`)}
+          >
             <Card style={[styles.card, overdue && styles.cardOverdue]}>
-              <Text style={styles.questTitle}>{entry.questTitle}</Text>
-              <Text style={styles.epicWinTitle}>{entry.epicWinTitle}</Text>
+              <Text style={styles.questTitle}>
+                {KIND_ICON[entry.kind]} {entry.title}
+              </Text>
+              {entry.kind === "QUEST" ? <Text style={styles.epicWinTitle}>{entry.epicWinTitle}</Text> : null}
               <Text style={[styles.deadline, overdue && styles.deadlineOverdue]}>
                 {formatDeadline(entry.deadline)}
                 {overdue ? " · просрочено" : ""} · {STATUS_LABEL[entry.status]}

@@ -2,10 +2,31 @@ import { CompleteDailyTaskInputSchema, UpdateDailyTaskInputSchema } from "@mypet
 import { Router } from "express";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { type AuthedRequest, requireAuth } from "../../middleware/requireAuth";
-import { completeDailyTask, deleteDailyTask, uncompleteDailyTask, updateDailyTask } from "./dailyTasks.service";
+import {
+  completeDailyTask,
+  deleteDailyTask,
+  getDailyTask,
+  listTodayTasks,
+  uncompleteDailyTask,
+  updateDailyTask,
+} from "./dailyTasks.service";
 
 export const dailyTasksRouter = Router();
 dailyTasksRouter.use(requireAuth);
+
+dailyTasksRouter.get(
+  "/today",
+  asyncHandler(async (req: AuthedRequest, res) => {
+    res.json(await listTodayTasks(req.userId!));
+  }),
+);
+
+dailyTasksRouter.get(
+  "/:id",
+  asyncHandler(async (req: AuthedRequest, res) => {
+    res.json(await getDailyTask(req.params.id, req.userId!));
+  }),
+);
 
 dailyTasksRouter.patch(
   "/:id",
@@ -35,13 +56,14 @@ dailyTasksRouter.post(
       res.status(400).json({ error: "Некорректные данные", details: parsed.error.flatten() });
       return;
     }
-    res.json(await completeDailyTask(req.params.id, req.userId!, parsed.data.quantity));
+    res.json(await completeDailyTask(req.params.id, req.userId!, parsed.data.quantity, parsed.data.date));
   }),
 );
 
 dailyTasksRouter.delete(
   "/:id/complete",
   asyncHandler(async (req: AuthedRequest, res) => {
-    res.json(await uncompleteDailyTask(req.params.id, req.userId!));
+    const date = typeof req.query.date === "string" ? req.query.date : undefined;
+    res.json(await uncompleteDailyTask(req.params.id, req.userId!, date));
   }),
 );

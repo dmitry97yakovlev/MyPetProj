@@ -2,12 +2,16 @@ import type { EpicWinDetailDto, QuestDto } from "@mypetproj/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityHeatmap } from "../../../src/components/ActivityHeatmap";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
+import { CommentsAndAttachments } from "../../../src/components/CommentsAndAttachments";
 import { ProgressBar } from "../../../src/components/ProgressBar";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
+import { TextField } from "../../../src/components/TextField";
+import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
-import { formatDeadline, isOverdue } from "../../../src/lib/date";
+import { formatDeadline, isOverdue, last7DayDates } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
 import { useAuthedFocusEffect } from "../../../src/lib/useAuthedFocusEffect";
 import { useTheme } from "../../../src/theme/ThemeContext";
@@ -25,18 +29,27 @@ export default function EpicWinDetailScreen() {
   const api = useApi();
   const { theme } = useTheme();
   const styles = useStyles();
-  const { refreshCharacter, refreshEpicWins } = useGamification();
+  const { refreshEpicWins } = useGamification();
   const [epicWin, setEpicWin] = useState<EpicWinDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
+  const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const weekDates = useMemo(last7DayDates, []);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await api.get<EpicWinDetailDto>(`/epic-wins/${id}`);
       setEpicWin(data);
-    } catch {
-      // Молча пропускаем — RefreshControl просто перестанет крутиться.
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Не удалось загрузить Эпик");
     } finally {
       setLoading(false);
     }
@@ -44,23 +57,72 @@ export default function EpicWinDetailScreen() {
 
   useAuthedFocusEffect(load);
 
+  function onStartEdit() {
+    if (!epicWin) return;
+    setTitleDraft(epicWin.title);
+    setDescriptionDraft(epicWin.description ?? "");
+    setEditing(true);
+  }
+
+  async function onSaveEdit() {
+    if (!titleDraft.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/epic-wins/${id}`, { title: titleDraft.trim(), description: descriptionDraft.trim() || null });
+      setEditing(false);
+      await Promise.all([load(), refreshEpicWins()]);
+    } catch {
+      // Молча пропускаем — форма редактирования просто останется открытой.
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function onCompleteQuest(questId: string) {
     await api.post(`/quests/${questId}/complete`, {});
-    await Promise.all([load(), refreshCharacter(), refreshEpicWins()]);
+    await Promise.all([load(), refreshEpicWins()]);
   }
 
   async function onFailQuest(questId: string) {
     await api.post(`/quests/${questId}/fail`, {});
-    await Promise.all([load(), refreshCharacter(), refreshEpicWins()]);
+    await Promise.all([load(), refreshEpicWins()]);
+  }
+
+  async function onAssignQuest(questId: string, assignedToUserId: string | null) {
+    await api.patch(`/quests/${questId}`, { assignedToUserId });
+    await load();
+  }
+
+  /** Тап по ячейке недельной сетки — отметить/снять выполнение простой задачи за конкретный день. */
+  async function onToggleWeekDay(taskId: string, dayIndex: number, currentlyDone: boolean) {
+    const date = weekDates[dayIndex];
+    setPendingDay({ taskId, dayIndex });
+    try {
+      if (currentlyDone) {
+        await api.del(`/daily-tasks/${taskId}/complete?date=${date}`);
+      } else {
+        await api.post(`/daily-tasks/${taskId}/complete`, { date });
+      }
+      await Promise.all([load(), refreshEpicWins()]);
+    } catch {
+      // Молча пропускаем — ячейка просто не переключится.
+    } finally {
+      setPendingDay(null);
+    }
   }
 
   if (!epicWin) {
     return (
       <View style={styles.screen}>
-        <Text style={styles.title}>{loading ? "Загрузка…" : "Не найдено"}</Text>
+        <Text style={styles.title}>{loading ? "Загрузка…" : loadError ? "Ошибка загрузки" : "Не найдено"}</Text>
+        {loadError ? <Text style={styles.hint}>{loadError}</Text> : null}
+        {loadError ? <Button label="Повторить" variant="secondary" onPress={load} /> : null}
       </View>
     );
   }
+
+  const hasMetric = epicWin.metricTargetValue !== null && epicWin.metricStartValue !== null;
+  const isShared = epicWin.members.length > 1;
 
   return (
     <FlatList
@@ -71,12 +133,36 @@ export default function EpicWinDetailScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       ListHeaderComponent={
         <View>
-          <ScreenTitle style={styles.title}>{epicWin.title}</ScreenTitle>
-          {epicWin.description ? <Text style={styles.description}>{epicWin.description}</Text> : null}
+          {editing ? (
+            <View style={styles.editBox}>
+              <TextField label="Название" value={titleDraft} onChangeText={setTitleDraft} />
+              <TextField label="Описание" value={descriptionDraft} onChangeText={setDescriptionDraft} multiline />
+              <View style={styles.editActionsRow}>
+                <View style={styles.editActionButton}>
+                  <Button label={savingEdit ? "Сохраняем…" : "Сохранить"} onPress={onSaveEdit} disabled={savingEdit} />
+                </View>
+                <View style={styles.editActionButton}>
+                  <Button label="Отмена" variant="secondary" onPress={() => setEditing(false)} />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Pressable onPress={onStartEdit}>
+              <ScreenTitle style={styles.title}>{epicWin.title} ✎</ScreenTitle>
+              {epicWin.description ? <Text style={styles.description}>{epicWin.description}</Text> : null}
+            </Pressable>
+          )}
           {epicWin.deadline ? (
             <Text style={[styles.deadline, isOverdue(epicWin.deadline) && styles.deadlineOverdue]}>
               Дедлайн: {formatDeadline(epicWin.deadline)}
               {isOverdue(epicWin.deadline) && epicWin.status === "ACTIVE" ? " · просрочено" : ""}
+            </Text>
+          ) : null}
+
+          {hasMetric ? (
+            <Text style={styles.metricLine}>
+              Сейчас: {epicWin.metricCurrentValue ?? epicWin.metricStartValue} {epicWin.metricUnit} · Начало:{" "}
+              {epicWin.metricStartValue} {epicWin.metricUnit} · Цель: {epicWin.metricTargetValue} {epicWin.metricUnit}
             </Text>
           ) : null}
 
@@ -87,29 +173,109 @@ export default function EpicWinDetailScreen() {
             <Text style={styles.progressLabel}>{epicWin.progress}%</Text>
           </View>
 
+          <Text style={styles.sectionTitle}>Активность</Text>
+          <ActivityHeatmap days={epicWin.activity} />
+
+          {isShared ? (
+            <>
+              <Text style={styles.sectionTitle}>Участники ({epicWin.members.length})</Text>
+              <View style={styles.membersRow}>
+                {epicWin.members.map((m) => (
+                  <Text key={m.userId} style={styles.memberChip}>
+                    {m.displayName || m.email}
+                    {m.role === "OWNER" ? " (владелец)" : ""}
+                  </Text>
+                ))}
+              </View>
+            </>
+          ) : null}
+
           <Button label="+ Добавить квест" onPress={() => router.push(`/epic-wins/${id}/quests/new`)} />
+          {epicWin.isOwner ? (
+            <Button
+              label="+ Пригласить друга"
+              variant="secondary"
+              onPress={() => router.push(`/epic-wins/${id}/invite`)}
+            />
+          ) : null}
           <Text style={styles.sectionTitle}>Квесты</Text>
+          <Text style={styles.hint}>Разверни квест, чтобы увидеть неделю выполнения по каждой задаче.</Text>
         </View>
       }
       ListEmptyComponent={!loading ? <Text style={styles.emptyText}>Квестов пока нет.</Text> : null}
-      renderItem={({ item: quest }) => (
-        <Pressable onPress={() => router.push(`/quests/${quest.id}`)}>
+      renderItem={({ item: quest }) => {
+        const expanded = expandedQuestId === quest.id;
+        return (
           <Card style={styles.questCard}>
-            <View style={styles.questHeader}>
-              <Text style={styles.questTitle}>{quest.title}</Text>
-              <Text style={styles.questStatus}>{QUEST_STATUS_LABEL[quest.status]}</Text>
-            </View>
-            {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
-            {quest.deadline ? (
-              <Text style={[styles.deadline, isOverdue(quest.deadline) && styles.deadlineOverdue]}>
-                Дедлайн: {formatDeadline(quest.deadline)}
-                {isOverdue(quest.deadline) && quest.status === "ACTIVE" ? " · просрочено" : ""}
+            <Pressable onPress={() => setExpandedQuestId(expanded ? null : quest.id)}>
+              <View style={styles.questHeader}>
+                <Text style={styles.questTitle}>
+                  {expanded ? "▾" : "▸"} {quest.title}
+                </Text>
+                <Text style={styles.questStatus}>{QUEST_STATUS_LABEL[quest.status]}</Text>
+              </View>
+              {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
+              {quest.deadline ? (
+                <Text style={[styles.deadline, isOverdue(quest.deadline) && styles.deadlineOverdue]}>
+                  Дедлайн: {formatDeadline(quest.deadline)}
+                  {isOverdue(quest.deadline) && quest.status === "ACTIVE" ? " · просрочено" : ""}
+                </Text>
+              ) : null}
+              <Text style={styles.meta}>
+                {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"}
+                {quest.assignedToName ? ` · назначен: ${quest.assignedToName}` : ""}
               </Text>
+            </Pressable>
+
+            {expanded ? (
+              <View style={styles.expandedArea}>
+                {isShared ? (
+                  <View style={styles.assignRow}>
+                    <Text style={styles.assignLabel}>Назначить:</Text>
+                    <Pressable
+                      onPress={() => onAssignQuest(quest.id, null)}
+                      style={[styles.assignChip, !quest.assignedToUserId && styles.assignChipActive]}
+                    >
+                      <Text style={styles.assignChipText}>Никому</Text>
+                    </Pressable>
+                    {epicWin.members.map((m) => (
+                      <Pressable
+                        key={m.userId}
+                        onPress={() => onAssignQuest(quest.id, m.userId)}
+                        style={[styles.assignChip, quest.assignedToUserId === m.userId && styles.assignChipActive]}
+                      >
+                        <Text style={styles.assignChipText} numberOfLines={1}>
+                          {m.displayName || m.email}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+
+                {quest.dailyTasks.length === 0 ? (
+                  <Text style={styles.emptyTasksText}>Ежедневных задач пока нет.</Text>
+                ) : (
+                  quest.dailyTasks.map((task) => {
+                    const isQuantified = Boolean(task.unit);
+                    return (
+                      <View key={task.id} style={styles.taskRow}>
+                        <Text style={styles.taskTitle}>{task.title}</Text>
+                        <WeeklyGrid
+                          days={task.last7Days}
+                          onToggleDay={
+                            isQuantified ? undefined : (dayIndex, done) => onToggleWeekDay(task.id, dayIndex, done)
+                          }
+                          pendingDayIndex={pendingDay?.taskId === task.id ? pendingDay.dayIndex : null}
+                        />
+                      </View>
+                    );
+                  })
+                )}
+                <Pressable onPress={() => router.push(`/quests/${quest.id}`)}>
+                  <Text style={styles.openLink}>Открыть квест →</Text>
+                </Pressable>
+              </View>
             ) : null}
-            <Text style={styles.meta}>
-              {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"} · награда {quest.xpReward}{" "}
-              XP
-            </Text>
 
             {quest.status === "ACTIVE" ? (
               <View style={styles.questActions}>
@@ -122,8 +288,13 @@ export default function EpicWinDetailScreen() {
               </View>
             ) : null}
           </Card>
-        </Pressable>
-      )}
+        );
+      }}
+      ListFooterComponent={
+        <View style={styles.footer}>
+          <CommentsAndAttachments targetType="EPIC_WIN" targetId={id!} />
+        </View>
+      }
     />
   );
 }
@@ -140,16 +311,30 @@ function useStyles() {
         description: { fontSize: typography.sizeMd, color: theme.colors.muted, marginTop: spacing.xs, marginBottom: spacing.md },
         deadline: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.muted, marginTop: spacing.xs },
         deadlineOverdue: { color: theme.colors.danger },
-        progressRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg, gap: spacing.sm },
+        metricLine: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink, marginTop: spacing.sm },
+        progressRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, marginBottom: spacing.lg, gap: spacing.sm },
         progressBarWrapper: { flex: 1 },
         progressLabel: { fontWeight: "700", color: theme.colors.ink, width: 44, textAlign: "right" },
         sectionTitle: {
           fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,
+          fontFamily: theme.headingFontFamily,
           color: theme.colors.ink,
           marginTop: spacing.lg,
-          marginBottom: spacing.sm,
+          marginBottom: spacing.xs,
         },
+        membersRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginBottom: spacing.md },
+        memberChip: {
+          fontSize: 11,
+          fontWeight: "700",
+          color: theme.colors.ink,
+          borderWidth: 1,
+          borderColor: theme.colors.ink,
+          backgroundColor: theme.colors.surface,
+          paddingVertical: 4,
+          paddingHorizontal: spacing.sm,
+        },
+        hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginBottom: spacing.sm },
         emptyText: { color: theme.colors.muted, marginTop: spacing.md },
         questCard: { marginBottom: spacing.md },
         questHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
@@ -157,8 +342,33 @@ function useStyles() {
         questStatus: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.muted },
         questDescription: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.xs },
         meta: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.sm },
+        expandedArea: {
+          marginTop: spacing.md,
+          paddingTop: spacing.md,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.muted,
+        },
+        assignRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.xs, marginBottom: spacing.md },
+        assignLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.muted, textTransform: "uppercase" },
+        assignChip: {
+          borderWidth: 1,
+          borderColor: theme.colors.ink,
+          backgroundColor: theme.colors.background,
+          paddingVertical: 4,
+          paddingHorizontal: spacing.sm,
+        },
+        assignChipActive: { backgroundColor: theme.colors.secondary },
+        assignChipText: { fontSize: 11, fontWeight: "700", color: theme.colors.ink },
+        emptyTasksText: { fontSize: typography.sizeSm, color: theme.colors.muted },
+        taskRow: { marginBottom: spacing.md },
+        taskTitle: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink },
+        openLink: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.accent, marginTop: spacing.xs },
         questActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
         questActionButton: { flex: 1 },
+        editBox: { marginBottom: spacing.sm },
+        editActionsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+        editActionButton: { flex: 1 },
+        footer: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: theme.colors.muted },
       }),
     [theme],
   );

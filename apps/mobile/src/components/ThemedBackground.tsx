@@ -9,16 +9,11 @@ import { useTheme } from "../theme/ThemeContext";
  * Не используется на списках/деталях, чтобы не мешать чтению.
  */
 export function ThemedBackground({ children, style, ...rest }: PropsWithChildren<ViewProps>) {
-  const { theme } = useTheme();
+  const { theme, backgroundImageUri } = useTheme();
 
-  if (theme.backgroundImageUri) {
+  if (backgroundImageUri) {
     return (
-      <ImageBackground
-        source={{ uri: theme.backgroundImageUri }}
-        style={[styles.fill, style]}
-        resizeMode="cover"
-        {...rest}
-      >
+      <ImageBackground source={{ uri: backgroundImageUri }} style={[styles.fill, style]} resizeMode="cover" {...rest}>
         <View style={[styles.scrim, { backgroundColor: theme.colors.background }]} />
         {children}
       </ImageBackground>

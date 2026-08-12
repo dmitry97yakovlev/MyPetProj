@@ -2,6 +2,7 @@ import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "react-native";
 import { Button } from "../../src/components/Button";
+import { Checkbox } from "../../src/components/Checkbox";
 import { DeadlinePicker } from "../../src/components/DeadlinePicker";
 import { ScreenTitle } from "../../src/components/ScreenTitle";
 import { TextField } from "../../src/components/TextField";
@@ -16,6 +17,11 @@ export default function NewEpicWinScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [deadline, setDeadline] = useState<string | null>(null);
+  const [priority, setPriority] = useState("0");
+  const [hasMetric, setHasMetric] = useState(false);
+  const [metricUnit, setMetricUnit] = useState("");
+  const [metricStartValue, setMetricStartValue] = useState("");
+  const [metricTargetValue, setMetricTargetValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -25,16 +31,32 @@ export default function NewEpicWinScreen() {
       setError("Укажи название");
       return;
     }
+
+    const payload: Parameters<typeof createEpicWin>[0] = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+      deadline: toApiDeadline(deadline),
+      priority: Number(priority) || 0,
+    };
+
+    if (hasMetric) {
+      const start = Number(metricStartValue.replace(",", "."));
+      const target = Number(metricTargetValue.replace(",", "."));
+      if (!metricUnit.trim() || !Number.isFinite(start) || !Number.isFinite(target)) {
+        setError("Заполни единицу измерения, начальное и целевое значение показателя");
+        return;
+      }
+      payload.metricUnit = metricUnit.trim();
+      payload.metricStartValue = start;
+      payload.metricTargetValue = target;
+    }
+
     setLoading(true);
     try {
-      const created = await createEpicWin({
-        title: title.trim(),
-        description: description.trim() || undefined,
-        deadline: toApiDeadline(deadline),
-      });
+      const created = await createEpicWin(payload);
       router.replace(`/epic-wins/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать Epic Win");
+      setError(err instanceof Error ? err.message : "Не удалось создать Эпик");
     } finally {
       setLoading(false);
     }
@@ -43,7 +65,7 @@ export default function NewEpicWinScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.screen}>
-        <ScreenTitle style={styles.title}>Новая Epic Win</ScreenTitle>
+        <ScreenTitle style={styles.title}>Новый Эпик</ScreenTitle>
         <Text style={styles.hint}>
           Большая долгосрочная цель. Например: «Привести себя в форму» или «Выучить испанский».
         </Text>
@@ -57,6 +79,45 @@ export default function NewEpicWinScreen() {
           multiline
         />
         <DeadlinePicker value={deadline} onChange={setDeadline} />
+        <TextField
+          label="Приоритет (необязательно)"
+          value={priority}
+          onChangeText={setPriority}
+          placeholder="0"
+          keyboardType="numeric"
+        />
+        <Text style={styles.hint}>
+          Чем выше число, тем выше Эпик на главном экране и тем больше весят его задачи в дневной результативности.
+        </Text>
+
+        <Checkbox
+          label="Отслеживать числовой показатель (например, вес)"
+          value={hasMetric}
+          onChange={setHasMetric}
+        />
+        {hasMetric ? (
+          <>
+            <Text style={styles.hint}>
+              Прогресс Эпика будет считаться по этому показателю (а не по доле завершённых квестов) — исходя из
+              последней отметки задачи, помеченной как "отслеживает показатель Эпика".
+            </Text>
+            <TextField label="Единица измерения" value={metricUnit} onChangeText={setMetricUnit} placeholder="кг" />
+            <TextField
+              label="Сейчас"
+              value={metricStartValue}
+              onChangeText={setMetricStartValue}
+              placeholder="87"
+              keyboardType="numeric"
+            />
+            <TextField
+              label="Цель"
+              value={metricTargetValue}
+              onChangeText={setMetricTargetValue}
+              placeholder="72"
+              keyboardType="numeric"
+            />
+          </>
+        ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

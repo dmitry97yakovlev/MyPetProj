@@ -1,7 +1,4 @@
 export interface AICoachContext {
-  characterLevel: number;
-  characterHp: number;
-  characterMaxHp: number;
   activeQuestCount: number;
   longestActiveStreak: number;
   hasOverdueQuest: boolean;

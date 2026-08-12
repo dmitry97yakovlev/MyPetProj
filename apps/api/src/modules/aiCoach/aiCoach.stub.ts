@@ -14,11 +14,6 @@ export class RuleBasedAICoachService implements AICoachService {
   private pickCandidates(context: AICoachContext): string[] {
     const tips: string[] = [];
 
-    if (context.characterHp <= context.characterMaxHp * 0.3) {
-      tips.push(
-        "Здоровье персонажа низкое — это не провал, а сигнал притормозить. Выбери один квест и доведи его до конца, вместо того чтобы набирать сразу много.",
-      );
-    }
     if (context.hasOverdueQuest) {
       tips.push(
         "Есть просроченные квесты. Можно сдвинуть дедлайн или разбить квест на более мелкие шаги — так проще вернуться в колею.",

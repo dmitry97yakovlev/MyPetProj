@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { assertEpicWinAccess, assertQuestAccess } from "../access";
-import { ITEM_PROGRESS_PER_QUEST, applyDamage, grantItemProgress, grantXp } from "../character/character.service";
+import { deleteAttachmentsFor } from "../attachments/attachments.service";
+import { deleteCommentsFor } from "../comments/comments.service";
 import { toDailyTaskDto } from "../dailyTasks/dailyTasks.service";
 
 const questInclude = (userId: string) =>
@@ -12,6 +13,7 @@ const questInclude = (userId: string) =>
       include: { completions: { where: { userId } } },
       orderBy: { createdAt: "asc" },
     },
+    assignedTo: true,
   }) satisfies Prisma.QuestInclude;
 
 export type QuestWithTasks = Prisma.QuestGetPayload<{ include: ReturnType<typeof questInclude> }>;
@@ -24,9 +26,19 @@ export function toQuestDto(quest: QuestWithTasks): QuestDto {
     description: quest.description,
     deadline: quest.deadline?.toISOString() ?? null,
     status: quest.status,
-    xpReward: quest.xpReward,
+    estimatedDays: quest.estimatedDays,
+    assignedToUserId: quest.assignedToUserId,
+    assignedToName: quest.assignedTo ? quest.assignedTo.displayName || quest.assignedTo.email : null,
     dailyTasks: quest.dailyTasks.map(toDailyTaskDto),
   };
+}
+
+/** Назначить квест можно только тому, кто уже состоит в этом Эпике (владельцу или приглашённому участнику). */
+async function assertAssigneeIsMember(epicWinId: string, assigneeId: string) {
+  const isMember = await prisma.epicWinMember.findUnique({
+    where: { epicWinId_userId: { epicWinId, userId: assigneeId } },
+  });
+  if (!isMember) throw new AppError(400, "Назначить квест можно только участнику этого Эпика");
 }
 
 export async function getQuest(questId: string, userId: string): Promise<QuestDto> {
@@ -37,6 +49,7 @@ export async function getQuest(questId: string, userId: string): Promise<QuestDt
 
 export async function createQuest(epicWinId: string, userId: string, input: CreateQuestInput): Promise<QuestDto> {
   await assertEpicWinAccess(epicWinId, userId);
+  if (input.assignedToUserId) await assertAssigneeIsMember(epicWinId, input.assignedToUserId);
   const position = await prisma.quest.count({ where: { epicWinId } });
 
   const quest = await prisma.quest.create({
@@ -45,7 +58,8 @@ export async function createQuest(epicWinId: string, userId: string, input: Crea
       title: input.title,
       description: input.description ?? null,
       deadline: input.deadline ? new Date(input.deadline) : null,
-      xpReward: input.xpReward ?? 50,
+      estimatedDays: input.estimatedDays ?? 1,
+      assignedToUserId: input.assignedToUserId ?? null,
       position,
     },
     include: questInclude(userId),
@@ -54,14 +68,17 @@ export async function createQuest(epicWinId: string, userId: string, input: Crea
 }
 
 export async function updateQuest(questId: string, userId: string, input: UpdateQuestInput): Promise<QuestDto> {
-  await assertQuestAccess(questId, userId);
+  const existing = await assertQuestAccess(questId, userId);
+  if (input.assignedToUserId) await assertAssigneeIsMember(existing.epicWinId, input.assignedToUserId);
+
   const quest = await prisma.quest.update({
     where: { id: questId },
     data: {
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.deadline !== undefined ? { deadline: input.deadline ? new Date(input.deadline) : null } : {}),
-      ...(input.xpReward !== undefined ? { xpReward: input.xpReward } : {}),
+      ...(input.estimatedDays !== undefined ? { estimatedDays: input.estimatedDays } : {}),
+      ...(input.assignedToUserId !== undefined ? { assignedToUserId: input.assignedToUserId } : {}),
     },
     include: questInclude(userId),
   });
@@ -71,9 +88,8 @@ export async function updateQuest(questId: string, userId: string, input: Update
 export async function deleteQuest(questId: string, userId: string): Promise<void> {
   await assertQuestAccess(questId, userId);
   await prisma.quest.delete({ where: { id: questId } });
+  await Promise.all([deleteCommentsFor("QUEST", questId), deleteAttachmentsFor("QUEST", questId)]);
 }
-
-const QUEST_FAIL_DAMAGE = 20;
 
 export async function completeQuest(questId: string, userId: string): Promise<QuestDto> {
   const quest = await assertQuestAccess(questId, userId);
@@ -84,9 +100,6 @@ export async function completeQuest(questId: string, userId: string): Promise<Qu
     data: { status: "COMPLETED" },
     include: questInclude(userId),
   });
-  await grantXp(userId, quest.xpReward);
-  // Каждый завершённый квест продвигает к следующему предмету экипировки.
-  await grantItemProgress(userId, ITEM_PROGRESS_PER_QUEST);
   return toQuestDto(updated);
 }
 
@@ -99,6 +112,5 @@ export async function failQuest(questId: string, userId: string): Promise<QuestD
     data: { status: "FAILED" },
     include: questInclude(userId),
   });
-  await applyDamage(userId, QUEST_FAIL_DAMAGE);
   return toQuestDto(updated);
 }

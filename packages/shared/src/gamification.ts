@@ -1,64 +1,5 @@
 import { z } from "zod";
 
-// ---------- Equipment ----------
-
-export const ItemSlotValues = ["WEAPON", "ARMOR", "TRINKET"] as const;
-export type ItemSlot = (typeof ItemSlotValues)[number];
-
-export const ItemRarityValues = ["COMMON", "RARE", "EPIC", "LEGENDARY"] as const;
-export type ItemRarity = (typeof ItemRarityValues)[number];
-
-/** Запись каталога — предмет, который в принципе существует в игре. */
-export interface ItemDto {
-  id: string;
-  name: string;
-  slot: ItemSlot;
-  rarity: ItemRarity;
-  icon: string;
-  bonusHp: number;
-}
-
-/** Каталожный предмет + владеет ли им текущий пользователь (для экрана коллекции — видно и то, что ещё не выпало). */
-export interface CatalogItemDto extends ItemDto {
-  owned: boolean;
-  equipped: boolean;
-}
-
-/** Предмет в инвентаре пользователя. */
-export interface InventoryItemDto {
-  inventoryItemId: string;
-  item: ItemDto;
-  equipped: boolean;
-  acquiredAt: string;
-}
-
-export const SetAvatarInputSchema = z.object({
-  icon: z.string().min(1).max(8),
-});
-export type SetAvatarInput = z.infer<typeof SetAvatarInputSchema>;
-
-/** Небольшой фиксированный набор эмодзи-аватаров на выбор — см. AVATAR_ICONS в character.service.ts (backend) / AVATAR_ICONS в мобильном коде. */
-export const AVATAR_ICONS = ["🧙", "🧝", "🧛", "🥷", "🦸", "🧟", "🐉", "🦾"] as const;
-
-// ---------- Character ----------
-
-export interface CharacterDto {
-  level: number;
-  /** Опыт, накопленный на текущем уровне. */
-  xp: number;
-  /** Сколько опыта нужно для перехода на следующий уровень. */
-  xpToNextLevel: number;
-  hp: number;
-  maxHp: number;
-  avatarIcon: string;
-  /** Прогресс к следующему предмету экипировки. */
-  itemProgress: number;
-  itemProgressToNext: number;
-  inventory: InventoryItemDto[];
-  /** Экипированные предметы по слотам (null — слот пуст). */
-  equipped: Record<ItemSlot, ItemDto | null>;
-}
-
 // ---------- Epic Win ----------
 
 export const EpicWinStatusValues = ["ACTIVE", "COMPLETED", "ARCHIVED"] as const;
@@ -68,6 +9,12 @@ export const CreateEpicWinInputSchema = z.object({
   title: z.string().min(1, "Укажи название").max(200),
   description: z.string().max(2000).optional(),
   deadline: z.string().datetime().optional(),
+  /** Выше число — выше в списке на главном экране и больше вес его задач в дневной результативности. */
+  priority: z.number().int().min(0).max(1000).optional(),
+  /** Необязательный числовой показатель цели (напр. вес в кг) — если задан вместе с target, прогресс считается по нему. */
+  metricUnit: z.string().min(1).max(20).optional(),
+  metricStartValue: z.number().optional(),
+  metricTargetValue: z.number().optional(),
 });
 export type CreateEpicWinInput = z.infer<typeof CreateEpicWinInputSchema>;
 
@@ -76,8 +23,15 @@ export const UpdateEpicWinInputSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   deadline: z.string().datetime().nullable().optional(),
   status: z.enum(EpicWinStatusValues).optional(),
+  priority: z.number().int().min(0).max(1000).optional(),
+  metricUnit: z.string().min(1).max(20).nullable().optional(),
+  metricStartValue: z.number().nullable().optional(),
+  metricTargetValue: z.number().nullable().optional(),
 });
 export type UpdateEpicWinInput = z.infer<typeof UpdateEpicWinInputSchema>;
+
+/** Совместные Эпики — до 5 участников включая владельца (см. epicWins.service.ts). */
+export const MAX_EPIC_WIN_MEMBERS = 5;
 
 export const InviteMemberInputSchema = z.object({
   email: z.string().email(),
@@ -91,17 +45,52 @@ export interface EpicWinMemberDto {
   role: "OWNER" | "MEMBER";
 }
 
+/** Облегчённая версия квеста для витрины на главном экране — без ежедневных задач. */
+export interface QuestSummaryDto {
+  id: string;
+  title: string;
+  status: QuestStatus;
+  /** "Вес" квеста в днях — определяет ширину его сегмента на таймлайн-полоске Эпика. */
+  estimatedDays: number;
+  assignedToUserId: string | null;
+  assignedToName: string | null;
+}
+
+/** Один день на GitHub-style тепловой сетке прогресса Эпика. */
+export interface EpicActivityDayDto {
+  /** YYYY-MM-DD */
+  date: string;
+  /** Сколько отметок выполнения (по всем ежедневным задачам Эпика) в этот день. */
+  count: number;
+  /** 0..1 — доля от числа ежедневных задач Эпика, для интенсивности цвета ячейки. */
+  ratio: number;
+}
+
 export interface EpicWinSummaryDto {
   id: string;
   title: string;
   description: string | null;
   deadline: string | null;
+  createdAt: string;
   status: EpicWinStatus;
-  /** 0..100, доля завершённых квестов. */
+  /**
+   * 0..100. Если задан числовой показатель цели (metricTargetValue) — прогресс
+   * до него (см. metricCurrentValue); иначе — доля завершённых квестов.
+   */
   progress: number;
   questCount: number;
   memberCount: number;
   isOwner: boolean;
+  priority: number;
+  quests: QuestSummaryDto[];
+  /** Последние ~70 дней для тепловой сетки "был ли прогресс в этот день". */
+  activity: EpicActivityDayDto[];
+
+  metricUnit: string | null;
+  metricStartValue: number | null;
+  metricTargetValue: number | null;
+  /** Последнее введённое значение показателя (напр. текущий вес), null — если ещё не отмечалось. */
+  metricCurrentValue: number | null;
 }
 
 export interface EpicWinDetailDto extends EpicWinSummaryDto {
@@ -118,7 +107,10 @@ export const CreateQuestInputSchema = z.object({
   title: z.string().min(1, "Укажи название").max(200),
   description: z.string().max(2000).optional(),
   deadline: z.string().datetime().optional(),
-  xpReward: z.number().int().min(0).max(10000).optional(),
+  /** Прикидка длительности в днях — вес сегмента на таймлайн-полоске Эпика. */
+  estimatedDays: z.number().int().min(1).max(3650).optional(),
+  /** Кому из участников совместного Эпика назначен этот квест. */
+  assignedToUserId: z.string().uuid().optional(),
 });
 export type CreateQuestInput = z.infer<typeof CreateQuestInputSchema>;
 
@@ -126,7 +118,8 @@ export const UpdateQuestInputSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
   deadline: z.string().datetime().nullable().optional(),
-  xpReward: z.number().int().min(0).max(10000).optional(),
+  estimatedDays: z.number().int().min(1).max(3650).optional(),
+  assignedToUserId: z.string().uuid().nullable().optional(),
 });
 export type UpdateQuestInput = z.infer<typeof UpdateQuestInputSchema>;
 
@@ -137,61 +130,46 @@ export interface QuestDto {
   description: string | null;
   deadline: string | null;
   status: QuestStatus;
-  xpReward: number;
+  estimatedDays: number;
+  assignedToUserId: string | null;
+  assignedToName: string | null;
   dailyTasks: DailyTaskDto[];
 }
 
 // ---------- Daily task ----------
 
-// Единица измерения и награда за единицу — вместе задают "задачу по количеству"
-// (например, "км" + 10 XP/км: пробежал 5 км → +50 XP). Оба поля вместе или
-// ни одного — частично заданная пара не имеет смысла.
-const quantifiedFields = {
+export const DailyTaskCategoryValues = ["MANDATORY", "OPTIONAL", "SMALL", "SUDDEN"] as const;
+export type DailyTaskCategory = (typeof DailyTaskCategoryValues)[number];
+
+export const CreateDailyTaskInputSchema = z.object({
+  title: z.string().min(1, "Укажи название").max(200),
+  description: z.string().max(2000).optional(),
+  category: z.enum(DailyTaskCategoryValues).optional(),
+  /** Задача "по количеству" (напр. км, минуты, кг) — просто подпись единицы для UI, без начисления очков. */
   unit: z.string().min(1).max(20).optional(),
-  xpPerUnit: z.number().int().min(1).max(1000).optional(),
-};
-
-function refineQuantifiedPair<T extends { unit?: string; xpPerUnit?: number }>(data: T, ctx: z.RefinementCtx) {
-  if (Boolean(data.unit) !== Boolean(data.xpPerUnit)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "unit и xpPerUnit нужно задавать вместе",
-      path: ["unit"],
-    });
-  }
-}
-
-export const CreateDailyTaskInputSchema = z
-  .object({
-    title: z.string().min(1, "Укажи название").max(200),
-    description: z.string().max(2000).optional(),
-    xpReward: z.number().int().min(0).max(1000).optional(),
-    ...quantifiedFields,
-  })
-  .superRefine(refineQuantifiedPair);
+  /** Последнее введённое количество считается текущим значением показателя цели родительского Эпика (см. EpicWin.metric*). */
+  tracksEpicMetric: z.boolean().optional(),
+});
 export type CreateDailyTaskInput = z.infer<typeof CreateDailyTaskInputSchema>;
 
-export const UpdateDailyTaskInputSchema = z
-  .object({
-    title: z.string().min(1).max(200).optional(),
-    description: z.string().max(2000).nullable().optional(),
-    xpReward: z.number().int().min(0).max(1000).optional(),
-    isActive: z.boolean().optional(),
-    unit: z.string().min(1).max(20).nullable().optional(),
-    xpPerUnit: z.number().int().min(1).max(1000).nullable().optional(),
-  })
-  .superRefine((data, ctx) => {
-    // Обновление меняет только переданные поля, так что здесь проверяем пару
-    // лишь когда оба явно переданы и хотя бы одно из них "выключает" другое.
-    if (data.unit !== undefined && data.xpPerUnit !== undefined && Boolean(data.unit) !== Boolean(data.xpPerUnit)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "unit и xpPerUnit нужно задавать вместе", path: ["unit"] });
-    }
-  });
+export const UpdateDailyTaskInputSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  isActive: z.boolean().optional(),
+  category: z.enum(DailyTaskCategoryValues).optional(),
+  unit: z.string().min(1).max(20).nullable().optional(),
+  tracksEpicMetric: z.boolean().optional(),
+});
 export type UpdateDailyTaskInput = z.infer<typeof UpdateDailyTaskInputSchema>;
 
 export const CompleteDailyTaskInputSchema = z.object({
   /** Обязательно для задач "по количеству" (когда у задачи задан unit). */
   quantity: z.number().positive().max(1_000_000).optional(),
+  /** YYYY-MM-DD — отметить конкретный день (например, прошлый четверг из недельной сетки), а не сегодня. Не раньше 6 дней назад и не позже сегодня. */
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в формате YYYY-MM-DD")
+    .optional(),
 });
 export type CompleteDailyTaskInput = z.infer<typeof CompleteDailyTaskInputSchema>;
 
@@ -200,26 +178,44 @@ export interface DailyTaskDto {
   questId: string;
   title: string;
   description: string | null;
-  xpReward: number;
   isActive: boolean;
-  /** Задана вместе с xpPerUnit → задача "по количеству" (например, "км"). */
+  category: DailyTaskCategory;
+  /** Задача "по количеству" — подпись единицы (например, "км"), без начисления очков. */
   unit: string | null;
-  xpPerUnit: number | null;
+  tracksEpicMetric: boolean;
   completedToday: boolean;
   /** Количество, введённое сегодня (только для задач "по количеству"). */
   todayQuantity: number | null;
   /** Число дней подряд с выполнением, считая сегодня (если выполнено сегодня). */
   streak: number;
+  /** Отметки за последние 7 календарных дней, от самого старого к сегодняшнему — для недельной сетки в UI. */
+  last7Days: boolean[];
+  /** Когда задача создана — используется для группировки по неделям, если задач в квесте много. */
+  createdAt: string;
+}
+
+/** Задача в контексте экрана "Сегодня" — тот же DailyTaskDto + откуда она (для навигации, группировки и веса в результативности). */
+export interface TodayTaskDto extends DailyTaskDto {
+  questTitle: string;
+  epicWinId: string;
+  epicWinTitle: string;
+  /** Приоритет родительского Эпика — вес этой задачи в подсчёте дневной результативности. */
+  epicPriority: number;
 }
 
 // ---------- Timeline ----------
 
-/** Квесты с дедлайном по всем моим Epic Win, отсортированные по дате. */
+export const TimelineEntryKindValues = ["QUEST", "EPIC_WIN"] as const;
+export type TimelineEntryKind = (typeof TimelineEntryKindValues)[number];
+
+/** Единая запись таймлайна — либо квест, либо сама Epic Win с дедлайном, отсортированные по дате. */
 export interface TimelineEntryDto {
-  questId: string;
-  questTitle: string;
+  kind: TimelineEntryKind;
+  /** questId либо epicWinId, в зависимости от kind. */
+  id: string;
+  title: string;
   epicWinId: string;
   epicWinTitle: string;
   deadline: string;
-  status: QuestStatus;
+  status: QuestStatus | EpicWinStatus;
 }

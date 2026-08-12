@@ -14,7 +14,6 @@ export interface FriendDto {
   userId: string;
   email: string;
   displayName: string | null;
-  level: number;
 }
 
 export interface FriendRequestDto {
@@ -34,7 +33,7 @@ export interface LeaderboardEntryDto {
   userId: string;
   email: string;
   displayName: string | null;
-  level: number;
-  xp: number;
+  /** Выполнений ежедневных задач за последние 30 дней — метрика активности вместо уровня/XP. */
+  completions30d: number;
   isMe: boolean;
 }

@@ -1,17 +1,19 @@
 import { useMemo } from "react";
 import { Pressable, type PressableProps, StyleSheet, Text } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
-import { borderWidth, spacing, typography } from "../theme/tokens";
+import { borderWidth, hexToRgba, spacing, typography } from "../theme/tokens";
 
 interface ButtonProps extends Omit<PressableProps, "style"> {
   label: string;
   variant?: "primary" | "secondary";
 }
 
+/** Компактная кнопка размером по тексту (не на всю ширину) — с прозрачностью панелей, как и карточки. */
 export function Button({ label, variant = "primary", disabled, ...rest }: ButtonProps) {
-  const { theme } = useTheme();
+  const { theme, panelOpacity } = useTheme();
   const styles = useStyles();
-  const backgroundColor = variant === "primary" ? theme.colors.primary : theme.colors.secondary;
+  const solid = variant === "primary" ? theme.colors.primary : theme.colors.secondary;
+  const backgroundColor = hexToRgba(solid, panelOpacity);
 
   return (
     <Pressable
@@ -35,30 +37,28 @@ function useStyles() {
     () =>
       StyleSheet.create({
         base: {
-          borderWidth,
+          alignSelf: "center",
+          borderWidth: Math.max(1, borderWidth - 1),
           borderColor: theme.colors.ink,
-          paddingVertical: spacing.md,
-          paddingHorizontal: spacing.lg,
+          paddingVertical: spacing.xs,
+          paddingHorizontal: spacing.md,
           alignItems: "center",
           justifyContent: "center",
           shadowColor: theme.colors.ink,
           shadowOpacity: 1,
           shadowRadius: 0,
-          shadowOffset: { width: 4, height: 4 },
-          elevation: 4,
+          shadowOffset: { width: 2, height: 2 },
+          elevation: 2,
         },
         pressed: {
           shadowOffset: { width: 0, height: 0 },
-          transform: [{ translateX: 4 }, { translateY: 4 }],
+          transform: [{ translateX: 2 }, { translateY: 2 }],
         },
         label: {
           fontWeight: typography.weightBold,
-          fontSize: typography.sizeMd,
-          // Светлый текст (colors.ink) на золотой/зелёной заливке кнопки читается
-          // плохо — тёмный фон даёт нужный контраст на обоих вариантах.
-          color: theme.colors.background,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
+          fontSize: typography.sizeSm,
+          color: theme.colors.ink,
+          letterSpacing: 0.3,
         },
       }),
     [theme],

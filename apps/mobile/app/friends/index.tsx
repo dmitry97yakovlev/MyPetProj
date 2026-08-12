@@ -134,7 +134,6 @@ export default function FriendsScreen() {
         {friends.map((f) => (
           <Card key={f.userId} style={styles.requestCard}>
             <Text style={styles.name}>{f.displayName || f.email}</Text>
-            <Text style={styles.meta}>Уровень {f.level}</Text>
           </Card>
         ))}
       </View>

@@ -22,11 +22,14 @@ model User {
   updatedAt DateTime @updatedAt
 
   sessions           Session[]
-  character          Character?
   ownedEpicWins      EpicWin[]        @relation("EpicWinOwner")
   epicWinMemberships EpicWinMember[]
   taskCompletions    TaskCompletion[]
-  inventoryItems     InventoryItem[]
+  journalEntries     JournalEntry[]
+  moodEntries        MoodEntry[]
+  assignedQuests     Quest[]         @relation("QuestAssignee")
+  comments           Comment[]
+  attachments        Attachment[]
   sentFriendRequests     FriendRequest[] @relation("FriendRequestsSent")
   receivedFriendRequests FriendRequest[] @relation("FriendRequestsReceived")
 
@@ -54,74 +57,6 @@ model FriendRequest {
   @@map("friend_requests")
 }
 
-model Character {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  level Int @default(1)
-  // Опыт, накопленный на ТЕКУЩЕМ уровне (не суммарный за всё время).
-  xp    Int @default(0)
-
-  hp    Int @default(100)
-  maxHp Int @default(100)
-
-  // Графическое отображение персонажа — эмодзи-иконка (выбирается из фикс. набора в UI).
-  avatarIcon String @default("🧙")
-
-  // Прогресс к следующему предмету экипировки (см. ITEM_PROGRESS_THRESHOLD в character.service.ts).
-  // Растёт за завершение квестов; при достижении порога выдаётся случайный предмет и остаток переносится.
-  itemProgress Int @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("characters")
-}
-
-enum ItemSlot {
-  WEAPON
-  ARMOR
-  TRINKET
-}
-
-enum ItemRarity {
-  COMMON
-  RARE
-  EPIC
-  LEGENDARY
-}
-
-// Статический каталог предметов экипировки (сидируется скриптом, не создаётся пользователями).
-model Item {
-  id     String     @id @default(uuid())
-  name   String
-  slot   ItemSlot
-  rarity ItemRarity
-  icon   String
-  // Небольшой флэйвор-бонус к maxHp за экипировку — не влияет на баланс XP.
-  bonusHp Int @default(0)
-
-  inventoryEntries InventoryItem[]
-
-  @@map("items")
-}
-
-// Предмет, полученный конкретным пользователем (владение + флаг "экипирован").
-model InventoryItem {
-  id     String @id @default(uuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  itemId String
-  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
-
-  equipped   Boolean  @default(false)
-  acquiredAt DateTime @default(now())
-
-  @@unique([userId, itemId])
-  @@map("inventory_items")
-}
-
 enum EpicWinStatus {
   ACTIVE
   COMPLETED
@@ -136,6 +71,17 @@ model EpicWin {
   description String?
   deadline    DateTime?
   status      EpicWinStatus @default(ACTIVE)
+  // Приоритет — выше число, выше в списке на главном экране; также взвешивает
+  // вклад задач этого Эпика в дневную результативность (см. dailyTasks.service.ts).
+  priority    Int           @default(0)
+
+  // Необязательный числовой показатель цели (например, вес в кг) — если задан,
+  // прогресс Эпика считается по нему (см. epicWins.service.ts), а не по доле
+  // завершённых квестов. Значения "сейчас" берутся из последней отметки
+  // ежедневной задачи с tracksEpicMetric=true внутри квестов этого Эпика.
+  metricUnit        String?
+  metricStartValue  Float?
+  metricTargetValue Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -180,9 +126,17 @@ model Quest {
   description String?
   deadline    DateTime?
   status      QuestStatus @default(ACTIVE)
-  // Награда персонажу, выполнившему квест (в очках опыта).
-  xpReward    Int         @default(50)
   position    Int         @default(0)
+  // "Вес" квеста в днях — на сколько сегментов и какого размера делится
+  // таймлайн-полоска прогресса Эпика (см. epicWins.service.ts). Не строгий
+  // дедлайн, а прикидка длительности: квест на 30 дней займёт на полоске
+  // втрое больше места, чем квест на 10 дней.
+  estimatedDays Int @default(1)
+
+  // Кому из участников совместного Эпика "принадлежит" этот квест — для
+  // распределения задач между друзьями. null = не назначен никому конкретно.
+  assignedToUserId String?
+  assignedTo       User?   @relation("QuestAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -192,21 +146,31 @@ model Quest {
   @@map("quests")
 }
 
+enum DailyTaskCategory {
+  MANDATORY
+  OPTIONAL
+  SMALL
+  SUDDEN
+}
+
 model DailyTask {
   id          String  @id @default(uuid())
   questId     String
   quest       Quest   @relation(fields: [questId], references: [id], onDelete: Cascade)
   title       String
   description String?
-  // Плоская награда — используется, когда unit не задан (обычная задача-чекбокс).
-  xpReward    Int     @default(10)
   isActive    Boolean @default(true)
+  // Группа для отображения на экране "Сегодня" (см. journal.service.ts todayTasksByCategory).
+  category DailyTaskCategory @default(MANDATORY)
 
-  // Если заданы оба поля — задача "по количеству": пользователь при выполнении
-  // вводит количество (например, км), а награда считается как quantity * xpPerUnit
-  // вместо плоского xpReward. unit — просто подпись для UI ("км", "повторений").
-  unit      String?
-  xpPerUnit Int?
+  // Задана — задача "по количеству": пользователь при выполнении вводит
+  // число (например, км, минуты, кг). unit — подпись единицы для UI.
+  unit String?
+
+  // Если true — последнее введённое количество по этой задаче считается
+  // "текущим значением показателя" родительского Эпика (см. EpicWin.metric*
+  // и epicWins.service.ts) — например, отметка веса для Эпика похудения.
+  tracksEpicMetric Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -252,4 +216,96 @@ model Session {
   lastUsedAt DateTime @default(now())
 
   @@map("sessions")
+}
+
+enum JournalEntryKind {
+  TEXT
+  VOICE
+}
+
+// Дневник: свободные записи-мысли пользователя (текст или голос) — не
+// связаны с задачами/квестами напрямую. Автоматически залогированные
+// выполнения задач/квестов/эпиков за день вычисляются на лету в
+// journal.service.ts, а не хранятся здесь отдельными записями.
+model JournalEntry {
+  id     String           @id @default(uuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind   JournalEntryKind @default(TEXT)
+
+  // Текст мысли (TEXT) или необязательная подпись к голосовой записи (VOICE).
+  content String?
+  // Относительный путь к аудиофайлу на сервере (только для kind=VOICE).
+  audioUrl String?
+  // Автоматическая расшифровка голоса в текст (Groq Whisper, если настроен
+  // GROQ_API_KEY) — чтобы будущий AI-агент мог читать дневник целиком.
+  transcript String?
+
+  // Календарный день записи (полночь UTC) — для группировки в UI по дням.
+  entryDate DateTime
+  createdAt DateTime @default(now())
+
+  @@map("journal_entries")
+}
+
+// Дневная самооценка эмоциональной стабильности (1..10) — не диагностика,
+// просто личный трекер настроения, одна запись в день, перезаписывается при
+// повторной отметке в тот же день.
+model MoodEntry {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  score Int // 1..10
+  date  DateTime // полночь UTC — календарный день
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@map("mood_entries")
+}
+
+// Comment/Attachment полиморфны по (targetType, targetId) — единый механизм
+// для Эпика/Квеста/Задачи, а не три отдельные таблицы-дубликата. Без
+// декларативного FK на конкретную сущность (Prisma не умеет полиморфные
+// relations); ссылочная целостность и удаление "хвостов" при удалении самой
+// сущности сделаны вручную в comments.service.ts/attachments.service.ts.
+enum EntityType {
+  EPIC_WIN
+  QUEST
+  DAILY_TASK
+}
+
+model Comment {
+  id         String     @id @default(uuid())
+  targetType EntityType
+  targetId   String
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body       String
+
+  createdAt DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("comments")
+}
+
+model Attachment {
+  id         String     @id @default(uuid())
+  targetType EntityType
+  targetId   String
+  uploaderId String
+  uploader   User       @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  fileName  String
+  // Относительный путь на сервере (см. /uploads, как и голосовые заметки дневника).
+  url       String
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("attachments")
 }
