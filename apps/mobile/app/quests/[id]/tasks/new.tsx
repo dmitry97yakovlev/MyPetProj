@@ -1,0 +1,117 @@
+import { router, useLocalSearchParams } from "expo-router";
+import { useMemo, useState } from "react";
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "react-native";
+import { Button } from "../../../../src/components/Button";
+import { Checkbox } from "../../../../src/components/Checkbox";
+import { ScreenTitle } from "../../../../src/components/ScreenTitle";
+import { TextField } from "../../../../src/components/TextField";
+import { useApi } from "../../../../src/lib/useApi";
+import { useTheme } from "../../../../src/theme/ThemeContext";
+import { spacing, typography } from "../../../../src/theme/tokens";
+
+export default function NewDailyTaskScreen() {
+  const { id: questId } = useLocalSearchParams<{ id: string }>();
+  const api = useApi();
+  const styles = useStyles();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [isQuantified, setIsQuantified] = useState(false);
+  const [unit, setUnit] = useState("");
+  const [xpPerUnit, setXpPerUnit] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function onSubmit() {
+    setError(null);
+    if (!title.trim()) {
+      setError("Укажи название");
+      return;
+    }
+
+    const payload: Record<string, unknown> = {
+      title: title.trim(),
+      description: description.trim() || undefined,
+    };
+
+    if (isQuantified) {
+      const rate = Number(xpPerUnit);
+      if (!unit.trim()) {
+        setError("Укажи единицу измерения (например, км)");
+        return;
+      }
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setError("XP за единицу должно быть целым числом больше нуля");
+        return;
+      }
+      payload.unit = unit.trim();
+      payload.xpPerUnit = Math.round(rate);
+    }
+
+    setLoading(true);
+    try {
+      await api.post(`/quests/${questId}/daily-tasks`, payload);
+      router.back();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать задачу");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={styles.screen}>
+        <ScreenTitle style={styles.title}>Новая ежедневная задача</ScreenTitle>
+        <Text style={styles.hint}>Повторяющееся действие внутри квеста. Например: «Пробежать 2 км сегодня».</Text>
+
+        <TextField label="Название" value={title} onChangeText={setTitle} placeholder="Пробежать 2 км" />
+        <TextField
+          label="Описание (необязательно)"
+          value={description}
+          onChangeText={setDescription}
+          placeholder="Детали"
+          multiline
+        />
+
+        <Checkbox
+          label="Награда зависит от количества (например, км)"
+          value={isQuantified}
+          onChange={setIsQuantified}
+        />
+
+        {isQuantified ? (
+          <>
+            <Text style={styles.hint}>Например: единица «км», XP за единицу «10» → 5 км = +50 XP.</Text>
+            <TextField label="Единица измерения" value={unit} onChangeText={setUnit} placeholder="км" />
+            <TextField
+              label="XP за единицу"
+              value={xpPerUnit}
+              onChangeText={setXpPerUnit}
+              placeholder="10"
+              keyboardType="numeric"
+            />
+          </>
+        ) : null}
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <Button label={loading ? "Создаём…" : "Создать"} onPress={onSubmit} disabled={loading} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+function useStyles() {
+  const { theme } = useTheme();
+  return useMemo(
+    () =>
+      StyleSheet.create({
+        flex: { flex: 1, backgroundColor: theme.colors.background },
+        screen: { flexGrow: 1, padding: spacing.lg },
+        title: { fontSize: typography.sizeXl, fontWeight: typography.weightBold, color: theme.colors.ink, marginBottom: spacing.sm },
+        hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginBottom: spacing.lg },
+        error: { color: theme.colors.danger, marginBottom: spacing.md, fontWeight: "600" },
+      }),
+    [theme],
+  );
+}

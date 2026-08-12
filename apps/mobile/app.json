@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "MyPetProj",
+    "slug": "mypetproj",
+    "scheme": "mypetproj",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mypetproj.app"
+    },
+    "android": {
+      "package": "com.mypetproj.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router", "expo-apple-authentication"]
+  }
+}

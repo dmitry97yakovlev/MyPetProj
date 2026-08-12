@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?
+  displayName  String?
+  isAdmin      Boolean  @default(false)
+
+  // Заделы под будущий вход через соцсети (см. CLAUDE.md, раздел про авторизацию)
+  appleId  String? @unique
+  googleId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions           Session[]
+  character          Character?
+  ownedEpicWins      EpicWin[]        @relation("EpicWinOwner")
+  epicWinMemberships EpicWinMember[]
+  taskCompletions    TaskCompletion[]
+  inventoryItems     InventoryItem[]
+  sentFriendRequests     FriendRequest[] @relation("FriendRequestsSent")
+  receivedFriendRequests FriendRequest[] @relation("FriendRequestsReceived")
+
+  @@map("users")
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+model FriendRequest {
+  id         String              @id @default(uuid())
+  fromUserId String
+  fromUser   User                @relation("FriendRequestsSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User                @relation("FriendRequestsReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+  status     FriendRequestStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromUserId, toUserId])
+  @@map("friend_requests")
+}
+
+model Character {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  level Int @default(1)
+  // Опыт, накопленный на ТЕКУЩЕМ уровне (не суммарный за всё время).
+  xp    Int @default(0)
+
+  hp    Int @default(100)
+  maxHp Int @default(100)
+
+  // Графическое отображение персонажа — эмодзи-иконка (выбирается из фикс. набора в UI).
+  avatarIcon String @default("🧙")
+
+  // Прогресс к следующему предмету экипировки (см. ITEM_PROGRESS_THRESHOLD в character.service.ts).
+  // Растёт за завершение квестов; при достижении порога выдаётся случайный предмет и остаток переносится.
+  itemProgress Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("characters")
+}
+
+enum ItemSlot {
+  WEAPON
+  ARMOR
+  TRINKET
+}
+
+enum ItemRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+// Статический каталог предметов экипировки (сидируется скриптом, не создаётся пользователями).
+model Item {
+  id     String     @id @default(uuid())
+  name   String
+  slot   ItemSlot
+  rarity ItemRarity
+  icon   String
+  // Небольшой флэйвор-бонус к maxHp за экипировку — не влияет на баланс XP.
+  bonusHp Int @default(0)
+
+  inventoryEntries InventoryItem[]
+
+  @@map("items")
+}
+
+// Предмет, полученный конкретным пользователем (владение + флаг "экипирован").
+model InventoryItem {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  equipped   Boolean  @default(false)
+  acquiredAt DateTime @default(now())
+
+  @@unique([userId, itemId])
+  @@map("inventory_items")
+}
+
+enum EpicWinStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model EpicWin {
+  id          String        @id @default(uuid())
+  ownerId     String
+  owner       User          @relation("EpicWinOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  deadline    DateTime?
+  status      EpicWinStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quests  Quest[]
+  members EpicWinMember[]
+
+  @@map("epic_wins")
+}
+
+enum EpicWinRole {
+  OWNER
+  MEMBER
+}
+
+// Участники совместной Epic Win (для целей с друзьями). Владелец тоже
+// присутствует здесь отдельной строкой с role=OWNER — упрощает проверки доступа.
+model EpicWinMember {
+  id        String      @id @default(uuid())
+  epicWinId String
+  epicWin   EpicWin     @relation(fields: [epicWinId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      EpicWinRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  @@unique([epicWinId, userId])
+  @@map("epic_win_members")
+}
+
+enum QuestStatus {
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+model Quest {
+  id          String      @id @default(uuid())
+  epicWinId   String
+  epicWin     EpicWin     @relation(fields: [epicWinId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  deadline    DateTime?
+  status      QuestStatus @default(ACTIVE)
+  // Награда персонажу, выполнившему квест (в очках опыта).
+  xpReward    Int         @default(50)
+  position    Int         @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dailyTasks DailyTask[]
+
+  @@map("quests")
+}
+
+model DailyTask {
+  id          String  @id @default(uuid())
+  questId     String
+  quest       Quest   @relation(fields: [questId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  // Плоская награда — используется, когда unit не задан (обычная задача-чекбокс).
+  xpReward    Int     @default(10)
+  isActive    Boolean @default(true)
+
+  // Если заданы оба поля — задача "по количеству": пользователь при выполнении
+  // вводит количество (например, км), а награда считается как quantity * xpPerUnit
+  // вместо плоского xpReward. unit — просто подпись для UI ("км", "повторений").
+  unit      String?
+  xpPerUnit Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completions TaskCompletion[]
+
+  @@map("daily_tasks")
+}
+
+model TaskCompletion {
+  id          String    @id @default(uuid())
+  dailyTaskId String
+  dailyTask   DailyTask @relation(fields: [dailyTaskId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Количество за этот день для задач "по количеству" (напр. 5 км). Null для
+  // обычных задач-чекбоксов.
+  quantity Float?
+
+  // Календарный день выполнения (полночь UTC) — не даёт отметить дважды за день.
+  completedOn DateTime
+  createdAt   DateTime  @default(now())
+
+  @@unique([dailyTaskId, userId, completedOn])
+  @@map("task_completions")
+}
+
+model Session {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Хранится только хэш refresh-токена, не сам токен.
+  refreshTokenHash String @unique
+
+  // null = "неограниченная сессия" (никогда не истекает).
+  // Иначе — дата истечения обычной сессии.
+  expiresAt DateTime?
+
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@map("sessions")
+}
