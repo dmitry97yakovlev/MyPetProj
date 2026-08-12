@@ -48,13 +48,14 @@ dailyTasksRouter.post(
       res.status(400).json({ error: "Некорректные данные", details: parsed.error.flatten() });
       return;
     }
-    res.json(await completeDailyTask(req.params.id, req.userId!, parsed.data.quantity));
+    res.json(await completeDailyTask(req.params.id, req.userId!, parsed.data.quantity, parsed.data.date));
   }),
 );
 
 dailyTasksRouter.delete(
   "/:id/complete",
   asyncHandler(async (req: AuthedRequest, res) => {
-    res.json(await uncompleteDailyTask(req.params.id, req.userId!));
+    const date = typeof req.query.date === "string" ? req.query.date : undefined;
+    res.json(await uncompleteDailyTask(req.params.id, req.userId!, date));
   }),
 );

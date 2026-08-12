@@ -1,6 +1,6 @@
 import type { ItemDto, ItemSlot } from "@mypetproj/shared";
 import { useMemo } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View, type DimensionValue } from "react-native";
 import { getAvatarCharacter } from "../lib/avatarCharacters";
 import { useTheme } from "../theme/ThemeContext";
 import { hexToRgba, spacing, typography } from "../theme/tokens";
@@ -17,12 +17,29 @@ interface CharacterPortraitProps {
 const SLOT_ORDER: ItemSlot[] = ["WEAPON", "ARMOR", "NECKLACE", "RING", "TRINKET"];
 
 /**
+ * Примерные точки крепления экипировки на полноростовой иллюстрации героя —
+ * в процентах от рамки (для size="hero"). Единой 3D-модели или разметки
+ * скелета у нас нет (картинки — готовые иллюстрации разных художников), так
+ * что это грубое, но единое для всех персонажей приближение позы "стоя,
+ * анфас/три четверти": оружие — у правой руки, кольцо — у левой, ожерелье —
+ * у горла, броня — по центру груди, трофей — у пояса.
+ */
+const SLOT_ANCHOR: Record<ItemSlot, { top: DimensionValue; left: DimensionValue }> = {
+  WEAPON: { top: "46%", left: "76%" },
+  ARMOR: { top: "34%", left: "48%" },
+  NECKLACE: { top: "16%", left: "48%" },
+  RING: { top: "56%", left: "18%" },
+  TRINKET: { top: "70%", left: "48%" },
+};
+
+/**
  * "Портрет" персонажа — полноростовая иллюстрация выбранного героя в рамке
- * с самоцветами по углам + видимая экипировка по слотам (пока не
- * накладывается на саму картинку — просто бейджи, см. CLAUDE.md).
+ * с самоцветами по углам.
  *
  * size="hero" — большая на всю ширину версия для верха экрана персонажа:
- * уровень/имя выводятся оверлеем поверх картинки внизу, слоты — тоже оверлеем.
+ * уровень/имя выводятся оверлеем поверх картинки внизу; экипированные
+ * предметы — иконками поверх самой картинки, в точках примерного крепления
+ * (см. SLOT_ANCHOR), а не отдельным списком — так виднее, что "надето".
  */
 export function CharacterPortrait({ avatarIcon, equipped, size = "large", level, name }: CharacterPortraitProps) {
   const styles = useStyles();
@@ -44,6 +61,7 @@ export function CharacterPortrait({ avatarIcon, equipped, size = "large", level,
   );
 
   if (hero) {
+    const equippedSlots = SLOT_ORDER.filter((slot) => equipped[slot]);
     return (
       <View style={styles.frameHero}>
         <View style={[styles.gem, styles.gemTopLeft]} />
@@ -51,6 +69,13 @@ export function CharacterPortrait({ avatarIcon, equipped, size = "large", level,
         <View style={[styles.gem, styles.gemBottomLeft]} />
         <View style={[styles.gem, styles.gemBottomRight]} />
         <Image source={{ uri: character.imageUrl }} style={styles.image} resizeMode="cover" />
+
+        {equippedSlots.map((slot) => (
+          <View key={slot} style={[styles.equipAnchor, SLOT_ANCHOR[slot]]}>
+            <Text style={styles.equipAnchorIcon}>{equipped[slot]!.icon}</Text>
+          </View>
+        ))}
+
         <View style={styles.heroOverlay}>
           {level !== undefined ? <Text style={styles.heroLevel}>Уровень {level}</Text> : null}
           {name ? (
@@ -58,7 +83,6 @@ export function CharacterPortrait({ avatarIcon, equipped, size = "large", level,
               {name}
             </Text>
           ) : null}
-          <View style={styles.slotsRowHero}>{slots}</View>
         </View>
       </View>
     );
@@ -124,7 +148,22 @@ function useStyles() {
         textShadowRadius: 0,
       },
       heroName: { fontSize: typography.sizeMd, color: theme.colors.ink, marginTop: 2 },
-      slotsRowHero: { flexDirection: "row", gap: spacing.xs, marginTop: spacing.sm },
+      equipAnchor: {
+        position: "absolute",
+        width: 36,
+        height: 36,
+        marginLeft: -18,
+        marginTop: -18,
+        borderRadius: 18,
+        borderWidth: 2,
+        borderColor: theme.colors.primary,
+        backgroundColor: hexToRgba(theme.colors.background, 0.78),
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 2,
+        ...theme.hardShadow,
+      },
+      equipAnchorIcon: { fontSize: typography.sizeMd },
       gem: {
         position: "absolute",
         width: gemSize,

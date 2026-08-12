@@ -303,6 +303,11 @@ export type UpdateDailyTaskInput = z.infer<typeof UpdateDailyTaskInputSchema>;
 export const CompleteDailyTaskInputSchema = z.object({
   /** Обязательно для задач "по количеству" (когда у задачи задан unit). */
   quantity: z.number().positive().max(1_000_000).optional(),
+  /** YYYY-MM-DD — отметить конкретный день (например, прошлый четверг из недельной сетки), а не сегодня. Не раньше 6 дней назад и не позже сегодня. */
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в формате YYYY-MM-DD")
+    .optional(),
 });
 export type CompleteDailyTaskInput = z.infer<typeof CompleteDailyTaskInputSchema>;
 

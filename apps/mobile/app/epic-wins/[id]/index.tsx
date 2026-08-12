@@ -8,7 +8,7 @@ import { ProgressBar } from "../../../src/components/ProgressBar";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
 import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
-import { formatDeadline, isOverdue } from "../../../src/lib/date";
+import { formatDeadline, isOverdue, last7DayDates } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
 import { useAuthedFocusEffect } from "../../../src/lib/useAuthedFocusEffect";
 import { useTheme } from "../../../src/theme/ThemeContext";
@@ -30,6 +30,8 @@ export default function EpicWinDetailScreen() {
   const [epicWin, setEpicWin] = useState<EpicWinDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
+  const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const weekDates = useMemo(last7DayDates, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -54,6 +56,24 @@ export default function EpicWinDetailScreen() {
   async function onFailQuest(questId: string) {
     await api.post(`/quests/${questId}/fail`, {});
     await Promise.all([load(), refreshCharacter(), refreshEpicWins()]);
+  }
+
+  /** Тап по ячейке недельной сетки — отметить/снять выполнение простой задачи за конкретный день. */
+  async function onToggleWeekDay(taskId: string, dayIndex: number, currentlyDone: boolean) {
+    const date = weekDates[dayIndex];
+    setPendingDay({ taskId, dayIndex });
+    try {
+      if (currentlyDone) {
+        await api.del(`/daily-tasks/${taskId}/complete?date=${date}`);
+      } else {
+        await api.post(`/daily-tasks/${taskId}/complete`, { date });
+      }
+      await Promise.all([load(), refreshCharacter()]);
+    } catch {
+      // Молча пропускаем — ячейка просто не переключится.
+    } finally {
+      setPendingDay(null);
+    }
   }
 
   if (!epicWin) {
@@ -124,12 +144,21 @@ export default function EpicWinDetailScreen() {
                 {quest.dailyTasks.length === 0 ? (
                   <Text style={styles.emptyTasksText}>Ежедневных задач пока нет.</Text>
                 ) : (
-                  quest.dailyTasks.map((task) => (
-                    <View key={task.id} style={styles.taskRow}>
-                      <Text style={styles.taskTitle}>{task.title}</Text>
-                      <WeeklyGrid days={task.last7Days} />
-                    </View>
-                  ))
+                  quest.dailyTasks.map((task) => {
+                    const isQuantified = Boolean(task.unit && task.xpPerUnit);
+                    return (
+                      <View key={task.id} style={styles.taskRow}>
+                        <Text style={styles.taskTitle}>{task.title}</Text>
+                        <WeeklyGrid
+                          days={task.last7Days}
+                          onToggleDay={
+                            isQuantified ? undefined : (dayIndex, done) => onToggleWeekDay(task.id, dayIndex, done)
+                          }
+                          pendingDayIndex={pendingDay?.taskId === task.id ? pendingDay.dayIndex : null}
+                        />
+                      </View>
+                    );
+                  })
                 )}
                 <Pressable onPress={() => router.push(`/quests/${quest.id}`)}>
                   <Text style={styles.openLink}>Открыть квест →</Text>

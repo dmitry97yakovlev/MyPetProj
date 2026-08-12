@@ -78,6 +78,29 @@ export function toDailyTaskDto(task: DailyTaskWithCompletions): DailyTaskDto {
   };
 }
 
+/**
+ * Разбирает необязательную дату (YYYY-MM-DD) из недельной сетки last7Days в
+ * конкретный UTC-день; по умолчанию — сегодня. Ограничено тем же окном, что
+ * и сама сетка (последние 7 дней, не в будущем) — так что задним числом
+ * старше недели или наперёд отметить нельзя.
+ */
+function resolveTargetDay(dateInput: string | undefined): Date {
+  const today = startOfUtcDay(new Date());
+  if (!dateInput) return today;
+
+  const parsed = startOfUtcDay(new Date(`${dateInput}T00:00:00.000Z`));
+  if (Number.isNaN(parsed.getTime())) {
+    throw new AppError(400, "Некорректная дата");
+  }
+  if (parsed.getTime() > today.getTime()) {
+    throw new AppError(400, "Нельзя отмечать выполнение будущим днём");
+  }
+  if (parsed.getTime() < addUtcDays(today, -6).getTime()) {
+    throw new AppError(400, "Можно отмечать только последние 7 дней");
+  }
+  return parsed;
+}
+
 async function loadWithCompletions(dailyTaskId: string, userId: string): Promise<DailyTaskWithCompletions> {
   return prisma.dailyTask.findUniqueOrThrow({
     where: { id: dailyTaskId },
@@ -134,18 +157,21 @@ export async function deleteDailyTask(dailyTaskId: string, userId: string): Prom
 }
 
 /**
- * Отмечает задачу выполненной сегодня.
+ * Отмечает задачу выполненной за конкретный день (по умолчанию — сегодня;
+ * см. resolveTargetDay). Так можно кликнуть по ячейке недельной сетки
+ * (last7Days) за любой из последних 7 дней, а не только за сегодня.
  *
- * Обычная задача: идемпотентно, плоская награда xpReward один раз в день.
+ * Обычная задача: идемпотентно, плоская награда xpReward один раз за день.
  * Задача "по количеству" (unit + xpPerUnit заданы): quantity обязателен;
- * если за сегодня уже что-то записано и новое количество БОЛЬШЕ — засчитываем
- * только разницу в XP (не весь объём заново). Уменьшить сегодняшнее количество
- * так нельзя — как и с обычными задачами, XP назад не отбираем.
+ * если за этот день уже что-то записано и новое количество БОЛЬШЕ — засчитываем
+ * только разницу в XP (не весь объём заново). Уменьшить уже записанное
+ * количество так нельзя — как и с обычными задачами, XP назад не отбираем.
  */
 export async function completeDailyTask(
   dailyTaskId: string,
   userId: string,
   quantity?: number,
+  date?: string,
 ): Promise<DailyTaskDto> {
   const { dailyTask } = await assertDailyTaskAccess(dailyTaskId, userId);
   const quantified = isQuantifiedTask(dailyTask);
@@ -154,14 +180,14 @@ export async function completeDailyTask(
     throw new AppError(400, `Укажи количество (${dailyTask.unit}) для этой задачи`);
   }
 
-  const today = startOfUtcDay(new Date());
+  const targetDay = resolveTargetDay(date);
   const existing = await prisma.taskCompletion.findUnique({
-    where: { dailyTaskId_userId_completedOn: { dailyTaskId, userId, completedOn: today } },
+    where: { dailyTaskId_userId_completedOn: { dailyTaskId, userId, completedOn: targetDay } },
   });
 
   if (!existing) {
     await prisma.taskCompletion.create({
-      data: { dailyTaskId, userId, completedOn: today, quantity: quantified ? quantity : null },
+      data: { dailyTaskId, userId, completedOn: targetDay, quantity: quantified ? quantity : null },
     });
     await grantXp(userId, computeTaskXp(dailyTask, quantity));
   } else if (quantified && quantity! > (existing.quantity ?? 0)) {
@@ -170,7 +196,7 @@ export async function completeDailyTask(
     await prisma.taskCompletion.update({ where: { id: existing.id }, data: { quantity } });
     await grantXp(userId, newXp - previousXp);
   }
-  // Простая задача, уже отмеченная сегодня, или меньшее количество — идемпотентно, без изменений.
+  // Простая задача, уже отмеченная за этот день, или меньшее количество — идемпотентно, без изменений.
 
   return toDailyTaskDto(await loadWithCompletions(dailyTaskId, userId));
 }
@@ -203,12 +229,12 @@ export async function listTodayTasks(userId: string): Promise<TodayTaskDto[]> {
   }));
 }
 
-/** Снимает отметку "выполнено сегодня" — на случай, если отметили по ошибке. XP назад не отбираем. */
-export async function uncompleteDailyTask(dailyTaskId: string, userId: string): Promise<DailyTaskDto> {
+/** Снимает отметку за конкретный день (по умолчанию — сегодня) — на случай, если отметили по ошибке. XP назад не отбираем. */
+export async function uncompleteDailyTask(dailyTaskId: string, userId: string, date?: string): Promise<DailyTaskDto> {
   await assertDailyTaskAccess(dailyTaskId, userId);
-  const today = startOfUtcDay(new Date());
+  const targetDay = resolveTargetDay(date);
 
-  await prisma.taskCompletion.deleteMany({ where: { dailyTaskId, userId, completedOn: today } });
+  await prisma.taskCompletion.deleteMany({ where: { dailyTaskId, userId, completedOn: targetDay } });
 
   return toDailyTaskDto(await loadWithCompletions(dailyTaskId, userId));
 }

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../theme/ThemeContext";
 import { spacing, typography } from "../theme/tokens";
 
@@ -21,21 +21,47 @@ function last7DayLetters(): string[] {
 interface WeeklyGridProps {
   /** 7 значений, от самого старого дня к сегодняшнему (см. DailyTaskDto.last7Days). */
   days: boolean[];
+  /**
+   * Если задан — ячейки становятся кликабельными: тап переключает выполнение
+   * за этот день (0 = 6 дней назад … 6 = сегодня). Без обработчика сетка
+   * остаётся только для просмотра (как раньше).
+   */
+  onToggleDay?: (dayIndex: number, currentlyDone: boolean) => void;
+  /** Индекс дня, для которого сейчас идёт запрос — чтобы не давать тапать повторно и показать, что "в процессе". */
+  pendingDayIndex?: number | null;
 }
 
 /** Недельная сетка выполнения задачи — по образцу "contribution graph", в стиле рун/печатей. */
-export function WeeklyGrid({ days }: WeeklyGridProps) {
+export function WeeklyGrid({ days, onToggleDay, pendingDayIndex = null }: WeeklyGridProps) {
   const styles = useStyles();
   const letters = useMemo(last7DayLetters, []);
 
   return (
     <View style={styles.row}>
-      {days.map((done, i) => (
-        <View key={i} style={styles.cell}>
-          <Text style={styles.letter}>{letters[i]}</Text>
-          <View style={[styles.mark, done && styles.markDone]}>{done ? <Text style={styles.check}>✓</Text> : null}</View>
-        </View>
-      ))}
+      {days.map((done, i) => {
+        const mark = (
+          <View style={[styles.mark, done && styles.markDone, pendingDayIndex === i && styles.markPending]}>
+            {done ? <Text style={styles.check}>✓</Text> : null}
+          </View>
+        );
+        return (
+          <View key={i} style={styles.cell}>
+            <Text style={styles.letter}>{letters[i]}</Text>
+            {onToggleDay ? (
+              <Pressable
+                onPress={() => onToggleDay(i, done)}
+                disabled={pendingDayIndex !== null}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: done }}
+              >
+                {mark}
+              </Pressable>
+            ) : (
+              mark
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -58,6 +84,7 @@ function useStyles() {
           justifyContent: "center",
         },
         markDone: { backgroundColor: theme.colors.secondary },
+        markPending: { opacity: 0.5 },
         check: { fontSize: 11, fontWeight: typography.weightBold, color: theme.colors.ink },
       }),
     [theme],

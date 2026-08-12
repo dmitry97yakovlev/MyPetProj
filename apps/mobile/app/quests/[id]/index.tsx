@@ -7,6 +7,7 @@ import { Card } from "../../../src/components/Card";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
 import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
+import { last7DayDates } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
 import { useAuthedFocusEffect } from "../../../src/lib/useAuthedFocusEffect";
 import { useTheme } from "../../../src/theme/ThemeContext";
@@ -23,6 +24,8 @@ export default function QuestDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
+  const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const weekDates = useMemo(last7DayDates, []);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -46,6 +49,24 @@ export default function QuestDetailScreen() {
       await api.post(`/daily-tasks/${task.id}/complete`, {});
     }
     await Promise.all([load(), refreshCharacter()]);
+  }
+
+  /** Тап по ячейке недельной сетки — отметить/снять выполнение простой задачи за конкретный день (не только сегодня). */
+  async function onToggleWeekDay(task: DailyTaskDto, dayIndex: number, currentlyDone: boolean) {
+    const date = weekDates[dayIndex];
+    setPendingDay({ taskId: task.id, dayIndex });
+    try {
+      if (currentlyDone) {
+        await api.del(`/daily-tasks/${task.id}/complete?date=${date}`);
+      } else {
+        await api.post(`/daily-tasks/${task.id}/complete`, { date });
+      }
+      await Promise.all([load(), refreshCharacter()]);
+    } catch {
+      // Молча пропускаем — ячейка просто не переключится.
+    } finally {
+      setPendingDay(null);
+    }
   }
 
   async function onSubmitQuantity(task: DailyTaskDto) {
@@ -143,7 +164,11 @@ export default function QuestDetailScreen() {
                   </Text>
                 ) : null}
                 {quantityErrors[task.id] ? <Text style={styles.error}>{quantityErrors[task.id]}</Text> : null}
-                <WeeklyGrid days={task.last7Days} />
+                <WeeklyGrid
+                  days={task.last7Days}
+                  onToggleDay={isQuantified ? undefined : (dayIndex, done) => onToggleWeekDay(task, dayIndex, done)}
+                  pendingDayIndex={pendingDay?.taskId === task.id ? pendingDay.dayIndex : null}
+                />
               </View>
             </View>
           </Card>

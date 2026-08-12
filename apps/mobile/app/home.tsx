@@ -12,6 +12,7 @@ import { WeeklyGrid } from "../src/components/WeeklyGrid";
 import { useAuth } from "../src/features/auth/AuthContext";
 import { useGamification } from "../src/features/gamification/GamificationContext";
 import { TimelineWidget } from "../src/features/timeline/TimelineWidget";
+import { formatDaysLeft, last7DayDates } from "../src/lib/date";
 import { useApi } from "../src/lib/useApi";
 import { useTheme } from "../src/theme/ThemeContext";
 import { spacing, typography } from "../src/theme/tokens";
@@ -52,22 +53,48 @@ export default function HomeScreen() {
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
   const [questDetails, setQuestDetails] = useState<Record<string, QuestDto>>({});
   const [questLoadingId, setQuestLoadingId] = useState<string | null>(null);
+  const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const weekDates = useMemo(last7DayDates, []);
 
-  const loadQuestDetail = useCallback(
+  const fetchQuestDetail = useCallback(
     async (questId: string) => {
-      if (questDetails[questId]) return;
-      setQuestLoadingId(questId);
       try {
         const data = await api.get<QuestDto>(`/quests/${questId}`);
         setQuestDetails((prev) => ({ ...prev, [questId]: data }));
       } catch {
         // Молча пропускаем — раскрытый квест просто останется без списка задач.
-      } finally {
-        setQuestLoadingId(null);
       }
     },
-    [api, questDetails],
+    [api],
   );
+
+  const loadQuestDetail = useCallback(
+    async (questId: string) => {
+      if (questDetails[questId]) return;
+      setQuestLoadingId(questId);
+      await fetchQuestDetail(questId);
+      setQuestLoadingId(null);
+    },
+    [questDetails, fetchQuestDetail],
+  );
+
+  /** Тап по ячейке недельной сетки внутри раскрытого квеста на главной — отметить/снять выполнение за конкретный день. */
+  async function onToggleWeekDay(task: DailyTaskDto, dayIndex: number, currentlyDone: boolean) {
+    const date = weekDates[dayIndex];
+    setPendingDay({ taskId: task.id, dayIndex });
+    try {
+      if (currentlyDone) {
+        await api.del(`/daily-tasks/${task.id}/complete?date=${date}`);
+      } else {
+        await api.post(`/daily-tasks/${task.id}/complete`, { date });
+      }
+      await Promise.all([fetchQuestDetail(task.questId), refreshCharacter()]);
+    } catch {
+      // Молча пропускаем — ячейка просто не переключится.
+    } finally {
+      setPendingDay(null);
+    }
+  }
 
   if (status !== "signedIn" || !user) {
     return <Redirect href="/login" />;
@@ -101,6 +128,9 @@ export default function HomeScreen() {
   }
 
   const expandedEpic = epicWins.find((e) => e.id === expandedEpicId) ?? null;
+  // "Скиллы в прокачке" — активные Эпики рядом с карточкой персонажа: те же цели,
+  // что и в сетке ниже, но компактно, с прогрессом и таймингом дедлайна на виду.
+  const skillEpics = epicWins.filter((e) => e.status === "ACTIVE").slice(0, 6);
 
   return (
     <ThemedBackground>
@@ -122,35 +152,44 @@ export default function HomeScreen() {
         </View>
 
         {character ? (
-          <Pressable onPress={() => router.push("/character")}>
-            <Card style={styles.characterCard}>
-              <View style={styles.characterHeaderRow}>
-                <CharacterPortrait avatarIcon={character.avatarIcon} equipped={character.equipped} size="compact" />
-                <View style={styles.characterHeaderInfo}>
-                  <View style={styles.characterNameRow}>
+          <View style={styles.dashboardRow}>
+            <Pressable onPress={() => router.push("/character")} style={styles.characterCardWrapper}>
+              <Card style={styles.characterCard}>
+                <View style={styles.characterHeaderRow}>
+                  <CharacterPortrait avatarIcon={character.avatarIcon} equipped={character.equipped} size="large" />
+                  <View style={styles.characterHeaderInfo}>
                     <Text style={styles.characterTitle}>Уровень {character.level}</Text>
                     <Text style={styles.characterName} numberOfLines={1}>
                       {user.displayName || user.email}
                     </Text>
-                  </View>
-                  <Text style={styles.characterHint}>Персонаж и экипировка →</Text>
+                    <Text style={styles.characterHint}>Персонаж и экипировка →</Text>
 
-                  <View style={styles.compactBarRow}>
-                    <Text style={styles.compactBarLabel}>XP</Text>
-                    <View style={styles.compactBarTrack}>
-                      <ProgressBar value={character.xp / character.xpToNextLevel} color={theme.colors.accent} height={8} />
+                    <View style={styles.compactBarRow}>
+                      <Text style={styles.compactBarLabel}>XP</Text>
+                      <View style={styles.compactBarTrack}>
+                        <ProgressBar value={character.xp / character.xpToNextLevel} color={theme.colors.accent} height={12} />
+                      </View>
                     </View>
-                  </View>
-                  <View style={styles.compactBarRow}>
-                    <Text style={styles.compactBarLabel}>HP</Text>
-                    <View style={styles.compactBarTrack}>
-                      <ProgressBar value={character.hp / character.maxHp} color={theme.colors.danger} height={8} />
+                    <View style={styles.compactBarRow}>
+                      <Text style={styles.compactBarLabel}>HP</Text>
+                      <View style={styles.compactBarTrack}>
+                        <ProgressBar value={character.hp / character.maxHp} color={theme.colors.danger} height={12} />
+                      </View>
                     </View>
                   </View>
                 </View>
+              </Card>
+            </Pressable>
+
+            {skillEpics.length > 0 ? (
+              <View style={styles.skillsPanel}>
+                <Text style={styles.skillsPanelTitle}>Скиллы в прокачке</Text>
+                {skillEpics.map((epic) => (
+                  <SkillChip key={epic.id} epic={epic} onPress={() => router.push(`/epic-wins/${epic.id}`)} />
+                ))}
               </View>
-            </Card>
-          </Pressable>
+            ) : null}
+          </View>
         ) : null}
 
         <TimelineWidget />
@@ -211,6 +250,8 @@ export default function HomeScreen() {
                   detail={questDetails[quest.id]}
                   loading={questLoadingId === quest.id}
                   onToggle={() => onToggleQuest(quest.id)}
+                  onToggleWeekDay={onToggleWeekDay}
+                  pendingDay={pendingDay}
                 />
               ))
             )}
@@ -221,6 +262,32 @@ export default function HomeScreen() {
         ) : null}
       </ScrollView>
     </ThemedBackground>
+  );
+}
+
+interface SkillChipProps {
+  epic: EpicWinSummaryDto;
+  onPress: () => void;
+}
+
+/** Компактная строка "скилла" рядом с карточкой персонажа: название Эпика, прогресс, дедлайн. */
+function SkillChip({ epic, onPress }: SkillChipProps) {
+  const styles = useStyles();
+  const { theme } = useTheme();
+
+  return (
+    <Pressable onPress={onPress} style={styles.skillChip}>
+      <View style={styles.skillChipHeader}>
+        {epic.rank ? <Text style={styles.skillChipMedal}>{MEDAL_ICON[epic.rank]}</Text> : null}
+        <Text style={styles.skillChipTitle} numberOfLines={1}>
+          {epic.title}
+        </Text>
+      </View>
+      <ProgressBar value={epic.progress / 100} color={theme.colors.accent} height={6} />
+      <Text style={styles.skillChipMeta}>
+        {epic.progress}% пройдено{epic.deadline ? ` · ${formatDaysLeft(epic.deadline)}` : ""}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -273,9 +340,11 @@ interface QuestRowProps {
   detail: QuestDto | undefined;
   loading: boolean;
   onToggle: () => void;
+  onToggleWeekDay: (task: DailyTaskDto, dayIndex: number, currentlyDone: boolean) => void;
+  pendingDay: { taskId: string; dayIndex: number } | null;
 }
 
-function QuestRow({ quest, expanded, detail, loading, onToggle }: QuestRowProps) {
+function QuestRow({ quest, expanded, detail, loading, onToggle, onToggleWeekDay, pendingDay }: QuestRowProps) {
   const styles = useStyles();
   const tasks = detail?.dailyTasks ?? [];
   const grouped = tasks.length > TASKS_PER_WEEK_GROUP_THRESHOLD ? groupTasksByWeek(tasks) : null;
@@ -297,12 +366,14 @@ function QuestRow({ quest, expanded, detail, loading, onToggle }: QuestRowProps)
                 <View key={week} style={styles.weekGroup}>
                   <Text style={styles.weekGroupTitle}>{week}</Text>
                   {weekTasks.map((task) => (
-                    <TaskRow key={task.id} task={task} />
+                    <TaskRow key={task.id} task={task} onToggleWeekDay={onToggleWeekDay} pendingDay={pendingDay} />
                   ))}
                 </View>
               ))
             : !loading
-              ? tasks.map((task) => <TaskRow key={task.id} task={task} />)
+              ? tasks.map((task) => (
+                  <TaskRow key={task.id} task={task} onToggleWeekDay={onToggleWeekDay} pendingDay={pendingDay} />
+                ))
               : null}
         </View>
       ) : null}
@@ -310,14 +381,25 @@ function QuestRow({ quest, expanded, detail, loading, onToggle }: QuestRowProps)
   );
 }
 
-function TaskRow({ task }: { task: DailyTaskDto }) {
+interface TaskRowProps {
+  task: DailyTaskDto;
+  onToggleWeekDay: (task: DailyTaskDto, dayIndex: number, currentlyDone: boolean) => void;
+  pendingDay: { taskId: string; dayIndex: number } | null;
+}
+
+function TaskRow({ task, onToggleWeekDay, pendingDay }: TaskRowProps) {
   const styles = useStyles();
+  const isQuantified = Boolean(task.unit && task.xpPerUnit);
   return (
     <View style={styles.taskRow}>
       <Text style={styles.taskRowTitle} numberOfLines={1}>
         {task.title}
       </Text>
-      <WeeklyGrid days={task.last7Days} />
+      <WeeklyGrid
+        days={task.last7Days}
+        onToggleDay={isQuantified ? undefined : (dayIndex, done) => onToggleWeekDay(task, dayIndex, done)}
+        pendingDayIndex={pendingDay?.taskId === task.id ? pendingDay.dayIndex : null}
+      />
     </View>
   );
 }
@@ -342,10 +424,30 @@ function useStyles() {
           borderWidth: 2,
           borderColor: theme.colors.ink,
         },
-        characterCard: { marginBottom: spacing.lg, marginTop: spacing.md },
-        characterHeaderRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
+        dashboardRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginBottom: spacing.lg, marginTop: spacing.md },
+        characterCardWrapper: { flexGrow: 1, flexBasis: 280 },
+        characterCard: { flex: 1 },
+        characterHeaderRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
         characterHeaderInfo: { flex: 1 },
-        characterHint: { fontSize: typography.sizeSm, color: theme.colors.accent, fontWeight: "700" },
+        characterHint: { fontSize: typography.sizeSm, color: theme.colors.accent, fontWeight: "700", marginBottom: spacing.sm },
+        skillsPanel: { flexGrow: 1, flexBasis: 220, gap: spacing.sm },
+        skillsPanelTitle: {
+          fontSize: typography.sizeSm,
+          fontWeight: typography.weightBold,
+          color: theme.colors.muted,
+          textTransform: "uppercase",
+          marginBottom: spacing.xs,
+        },
+        skillChip: {
+          borderWidth: 2,
+          borderColor: theme.colors.ink,
+          backgroundColor: theme.colors.surface,
+          padding: spacing.sm,
+        },
+        skillChipHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.xs },
+        skillChipMedal: { fontSize: typography.sizeSm, marginRight: spacing.xs },
+        skillChipTitle: { flex: 1, fontSize: typography.sizeSm, fontWeight: typography.weightBold, color: theme.colors.ink },
+        skillChipMeta: { fontSize: 11, color: theme.colors.muted, marginTop: spacing.xs },
         navRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
         navItem: {
           flex: 1,
@@ -365,17 +467,16 @@ function useStyles() {
           marginBottom: spacing.lg,
         },
         navItemText: { fontWeight: typography.weightBold, color: theme.colors.ink, fontSize: typography.sizeSm },
-        characterNameRow: { flexDirection: "row", alignItems: "baseline", gap: spacing.sm, flexWrap: "wrap" },
         characterTitle: {
-          fontSize: typography.sizeLg,
+          fontSize: typography.sizeXl,
           fontWeight: typography.weightBold,
           fontFamily: theme.headingFontFamily,
           color: theme.colors.ink,
         },
-        characterName: { fontSize: typography.sizeSm, color: theme.colors.muted, flexShrink: 1 },
+        characterName: { fontSize: typography.sizeMd, color: theme.colors.muted },
         compactBarRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.xs, gap: spacing.xs },
-        compactBarLabel: { fontSize: 10, fontWeight: "700", color: theme.colors.muted, width: 20 },
-        compactBarTrack: { width: 120 },
+        compactBarLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.muted, width: 24 },
+        compactBarTrack: { flex: 1 },
         sectionTitle: {
           fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,

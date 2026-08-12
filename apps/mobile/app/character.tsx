@@ -1,9 +1,8 @@
 import { AVATAR_CHARACTERS, type CatalogItemDto, type ItemRarity, type ItemSlot } from "@mypetproj/shared";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../src/components/Card";
-import { Character3DViewer } from "../src/components/Character3DViewer";
 import { CharacterPortrait } from "../src/components/CharacterPortrait";
 import { ProgressBar } from "../src/components/ProgressBar";
 import { ScreenTitle } from "../src/components/ScreenTitle";
@@ -130,21 +129,17 @@ export default function CharacterScreen() {
         <Text style={styles.backText}>← Назад</Text>
       </Pressable>
 
-      {Platform.OS === "web" ? (
-        <>
-          <Character3DViewer characterId={character.avatarIcon} equipped={character.equipped} />
-          <Text style={styles.level}>Уровень {character.level}</Text>
-          <Text style={styles.characterName}>{user?.displayName || user?.email}</Text>
-        </>
-      ) : (
-        <CharacterPortrait
-          avatarIcon={character.avatarIcon}
-          equipped={character.equipped}
-          size="hero"
-          level={character.level}
-          name={user?.displayName || user?.email}
-        />
-      )}
+      <CharacterPortrait
+        avatarIcon={character.avatarIcon}
+        equipped={character.equipped}
+        size="hero"
+        level={character.level}
+        name={user?.displayName || user?.email}
+      />
+      <Text style={styles.hint}>
+        Экипированные предметы показаны иконками поверх картинки — оружие у правой руки, кольцо у левой, ожерелье у
+        горла, броня на груди, трофей у пояса.
+      </Text>
 
       <Card style={styles.card}>
         <Text style={styles.barLabel}>
