@@ -75,10 +75,7 @@ export async function respondToFriendRequest(requestId: string, userId: string, 
 export async function listFriends(userId: string): Promise<FriendDto[]> {
   const accepted = await prisma.friendRequest.findMany({
     where: { status: "ACCEPTED", OR: [{ fromUserId: userId }, { toUserId: userId }] },
-    include: {
-      fromUser: { include: { character: true } },
-      toUser: { include: { character: true } },
-    },
+    include: { fromUser: true, toUser: true },
   });
 
   return accepted.map((r) => {
@@ -87,7 +84,6 @@ export async function listFriends(userId: string): Promise<FriendDto[]> {
       userId: friend.id,
       email: friend.email,
       displayName: friend.displayName,
-      level: friend.character?.level ?? 1,
     };
   });
 }

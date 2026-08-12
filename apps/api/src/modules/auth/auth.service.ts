@@ -1,7 +1,6 @@
 import type { AppleSignInInput, AuthResponse, GoogleSignInInput, LoginInput, RegisterInput } from "@mypetproj/shared";
 import type { User } from "@prisma/client";
 import { prisma } from "../../db";
-import { getOrCreateCharacter } from "../character/character.service";
 import { verifyAppleIdentityToken } from "./appleAuth";
 import { verifyGoogleIdToken } from "./googleAuth";
 import { generateRefreshToken, hashRefreshToken, refreshTokenExpiryDate, signAccessToken } from "./jwt";
@@ -48,7 +47,6 @@ export async function register(input: RegisterInput, userAgent?: string): Promis
   const user = await prisma.user.create({
     data: { email: input.email, passwordHash, displayName: input.displayName ?? null },
   });
-  await getOrCreateCharacter(user.id);
 
   const tokens = await issueSession(user.id, input.unlimitedSession ?? false, userAgent);
   return { user: toAuthUser(user), ...tokens };
@@ -121,7 +119,6 @@ async function findOrCreateSocialUser(params: {
       ...providerField,
     },
   });
-  await getOrCreateCharacter(user.id);
   return user;
 }
 

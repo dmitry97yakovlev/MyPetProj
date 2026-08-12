@@ -4,7 +4,6 @@ import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { addUtcDays, isoDate, startOfUtcDay } from "../../lib/date";
 import { assertDailyTaskAccess, assertQuestAccess } from "../access";
-import { grantXp } from "../character/character.service";
 
 export type DailyTaskWithCompletions = DailyTask & { completions: TaskCompletion[] };
 
@@ -32,16 +31,8 @@ export function computeStreak(completions: { completedOn: Date }[]): {
   return { completedToday, streak };
 }
 
-export function isQuantifiedTask(task: Pick<DailyTask, "unit" | "xpPerUnit">): boolean {
-  return Boolean(task.unit && task.xpPerUnit);
-}
-
-/** XP за конкретное количество (задачи "по количеству") либо плоская награда задачи. */
-function computeTaskXp(task: DailyTask, quantity: number | null | undefined): number {
-  if (isQuantifiedTask(task)) {
-    return Math.round((quantity ?? 0) * task.xpPerUnit!);
-  }
-  return task.xpReward;
+export function isQuantifiedTask(task: Pick<DailyTask, "unit">): boolean {
+  return Boolean(task.unit);
 }
 
 /** Отметки за последние 7 календарных дней (UTC), от самого старого к сегодняшнему — для недельной сетки в UI. */
@@ -65,17 +56,69 @@ export function toDailyTaskDto(task: DailyTaskWithCompletions): DailyTaskDto {
     questId: task.questId,
     title: task.title,
     description: task.description,
-    xpReward: task.xpReward,
-    unit: task.unit,
-    xpPerUnit: task.xpPerUnit,
     isActive: task.isActive,
     category: task.category,
+    unit: task.unit,
+    tracksEpicMetric: task.tracksEpicMetric,
     completedToday,
     todayQuantity: todayCompletion?.quantity ?? null,
     streak,
     last7Days: computeLast7Days(task.completions),
     createdAt: task.createdAt.toISOString(),
   };
+}
+
+async function loadWithCompletions(dailyTaskId: string, userId: string): Promise<DailyTaskWithCompletions> {
+  return prisma.dailyTask.findUniqueOrThrow({
+    where: { id: dailyTaskId },
+    include: { completions: { where: { userId } } },
+  });
+}
+
+export async function createDailyTask(
+  questId: string,
+  userId: string,
+  input: CreateDailyTaskInput,
+): Promise<DailyTaskDto> {
+  await assertQuestAccess(questId, userId);
+  const task = await prisma.dailyTask.create({
+    data: {
+      questId,
+      title: input.title,
+      description: input.description ?? null,
+      category: input.category ?? "MANDATORY",
+      unit: input.unit ?? null,
+      tracksEpicMetric: input.tracksEpicMetric ?? false,
+    },
+    include: { completions: { where: { userId } } },
+  });
+  return toDailyTaskDto(task);
+}
+
+export async function updateDailyTask(
+  dailyTaskId: string,
+  userId: string,
+  input: UpdateDailyTaskInput,
+): Promise<DailyTaskDto> {
+  await assertDailyTaskAccess(dailyTaskId, userId);
+  const task = await prisma.dailyTask.update({
+    where: { id: dailyTaskId },
+    data: {
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.unit !== undefined ? { unit: input.unit } : {}),
+      ...(input.tracksEpicMetric !== undefined ? { tracksEpicMetric: input.tracksEpicMetric } : {}),
+    },
+    include: { completions: { where: { userId } } },
+  });
+  return toDailyTaskDto(task);
+}
+
+export async function deleteDailyTask(dailyTaskId: string, userId: string): Promise<void> {
+  await assertDailyTaskAccess(dailyTaskId, userId);
+  await prisma.dailyTask.delete({ where: { id: dailyTaskId } });
 }
 
 /**
@@ -101,71 +144,16 @@ function resolveTargetDay(dateInput: string | undefined): Date {
   return parsed;
 }
 
-async function loadWithCompletions(dailyTaskId: string, userId: string): Promise<DailyTaskWithCompletions> {
-  return prisma.dailyTask.findUniqueOrThrow({
-    where: { id: dailyTaskId },
-    include: { completions: { where: { userId } } },
-  });
-}
-
-export async function createDailyTask(
-  questId: string,
-  userId: string,
-  input: CreateDailyTaskInput,
-): Promise<DailyTaskDto> {
-  await assertQuestAccess(questId, userId);
-  const task = await prisma.dailyTask.create({
-    data: {
-      questId,
-      title: input.title,
-      description: input.description ?? null,
-      xpReward: input.xpReward ?? 10,
-      category: input.category ?? "MANDATORY",
-      unit: input.unit ?? null,
-      xpPerUnit: input.xpPerUnit ?? null,
-    },
-    include: { completions: { where: { userId } } },
-  });
-  return toDailyTaskDto(task);
-}
-
-export async function updateDailyTask(
-  dailyTaskId: string,
-  userId: string,
-  input: UpdateDailyTaskInput,
-): Promise<DailyTaskDto> {
-  await assertDailyTaskAccess(dailyTaskId, userId);
-  const task = await prisma.dailyTask.update({
-    where: { id: dailyTaskId },
-    data: {
-      ...(input.title !== undefined ? { title: input.title } : {}),
-      ...(input.description !== undefined ? { description: input.description } : {}),
-      ...(input.xpReward !== undefined ? { xpReward: input.xpReward } : {}),
-      ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
-      ...(input.category !== undefined ? { category: input.category } : {}),
-      ...(input.unit !== undefined ? { unit: input.unit } : {}),
-      ...(input.xpPerUnit !== undefined ? { xpPerUnit: input.xpPerUnit } : {}),
-    },
-    include: { completions: { where: { userId } } },
-  });
-  return toDailyTaskDto(task);
-}
-
-export async function deleteDailyTask(dailyTaskId: string, userId: string): Promise<void> {
-  await assertDailyTaskAccess(dailyTaskId, userId);
-  await prisma.dailyTask.delete({ where: { id: dailyTaskId } });
-}
-
 /**
  * Отмечает задачу выполненной за конкретный день (по умолчанию — сегодня;
  * см. resolveTargetDay). Так можно кликнуть по ячейке недельной сетки
  * (last7Days) за любой из последних 7 дней, а не только за сегодня.
  *
- * Обычная задача: идемпотентно, плоская награда xpReward один раз за день.
- * Задача "по количеству" (unit + xpPerUnit заданы): quantity обязателен;
- * если за этот день уже что-то записано и новое количество БОЛЬШЕ — засчитываем
- * только разницу в XP (не весь объём заново). Уменьшить уже записанное
- * количество так нельзя — как и с обычными задачами, XP назад не отбираем.
+ * Обычная задача: идемпотентная отметка-чекбокс. Задача "по количеству"
+ * (unit задан): quantity обязателен и просто перезаписывает отметку за этот
+ * день (например, отметка текущего веса) — если новое значение меньше
+ * прежнего, оно всё равно заменяет старое (в отличие от прежней XP-логики
+ * здесь не нужно защищаться от "уменьшения счётчика").
  */
 export async function completeDailyTask(
   dailyTaskId: string,
@@ -189,21 +177,18 @@ export async function completeDailyTask(
     await prisma.taskCompletion.create({
       data: { dailyTaskId, userId, completedOn: targetDay, quantity: quantified ? quantity : null },
     });
-    await grantXp(userId, computeTaskXp(dailyTask, quantity));
-  } else if (quantified && quantity! > (existing.quantity ?? 0)) {
-    const previousXp = computeTaskXp(dailyTask, existing.quantity);
-    const newXp = computeTaskXp(dailyTask, quantity);
+  } else if (quantified) {
     await prisma.taskCompletion.update({ where: { id: existing.id }, data: { quantity } });
-    await grantXp(userId, newXp - previousXp);
   }
-  // Простая задача, уже отмеченная за этот день, или меньшее количество — идемпотентно, без изменений.
+  // Простая задача, уже отмеченная за этот день — идемпотентно, без изменений.
 
   return toDailyTaskDto(await loadWithCompletions(dailyTaskId, userId));
 }
 
 /**
  * Все активные ежедневные задачи по всем активным квестам пользователя —
- * для экрана "Сегодня" (группировка по category делается на клиенте).
+ * для экрана "Сегодня" (группировка по category делается на клиенте, вес в
+ * дневной результативности — по epicPriority).
  */
 export async function listTodayTasks(userId: string): Promise<TodayTaskDto[]> {
   const tasks = await prisma.dailyTask.findMany({
@@ -226,10 +211,11 @@ export async function listTodayTasks(userId: string): Promise<TodayTaskDto[]> {
     questTitle: task.quest.title,
     epicWinId: task.quest.epicWinId,
     epicWinTitle: task.quest.epicWin.title,
+    epicPriority: task.quest.epicWin.priority,
   }));
 }
 
-/** Снимает отметку за конкретный день (по умолчанию — сегодня) — на случай, если отметили по ошибке. XP назад не отбираем. */
+/** Снимает отметку за конкретный день (по умолчанию — сегодня) — на случай, если отметили по ошибке. */
 export async function uncompleteDailyTask(dailyTaskId: string, userId: string, date?: string): Promise<DailyTaskDto> {
   await assertDailyTaskAccess(dailyTaskId, userId);
   const targetDay = resolveTargetDay(date);

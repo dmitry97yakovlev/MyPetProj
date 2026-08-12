@@ -4,11 +4,9 @@ import path from "node:path";
 import { env } from "./env";
 import { coachRouter } from "./modules/aiCoach/aiCoach.controller";
 import { authRouter } from "./modules/auth/auth.controller";
-import { characterRouter } from "./modules/character/character.controller";
 import { dailyTasksRouter } from "./modules/dailyTasks/dailyTasks.controller";
 import { epicWinsRouter } from "./modules/epicWins/epicWins.controller";
 import { friendsRouter } from "./modules/friends/friends.controller";
-import { itemsRouter } from "./modules/items/items.controller";
 import { journalRouter } from "./modules/journal/journal.controller";
 import { leaderboardRouter } from "./modules/leaderboard/leaderboard.controller";
 import { questsRouter } from "./modules/quests/quests.controller";
@@ -28,8 +26,6 @@ app.get("/health", (_req, res) => {
 
 app.use("/auth", authRouter);
 app.use("/me", meRouter);
-app.use("/character", characterRouter);
-app.use("/items", itemsRouter);
 app.use("/epic-wins", epicWinsRouter);
 app.use("/quests", questsRouter);
 app.use("/daily-tasks", dailyTasksRouter);

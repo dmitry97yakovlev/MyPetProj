@@ -1,24 +1,24 @@
-import type { DailyTaskDto, EpicWinSummaryDto, QuestDto, QuestSummaryDto } from "@mypetproj/shared";
+import type { DailyTaskDto, EpicWinSummaryDto, QuestDto, QuestSummaryDto, TodayTaskDto } from "@mypetproj/shared";
 import { Redirect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityHeatmap } from "../src/components/ActivityHeatmap";
 import { Button } from "../src/components/Button";
 import { Card } from "../src/components/Card";
-import { CharacterPortrait } from "../src/components/CharacterPortrait";
 import { ProgressBar } from "../src/components/ProgressBar";
-import { SegmentedTimelineBar } from "../src/components/SegmentedTimelineBar";
 import { ThemedBackground } from "../src/components/ThemedBackground";
 import { WeeklyGrid } from "../src/components/WeeklyGrid";
 import { useAuth } from "../src/features/auth/AuthContext";
 import { useGamification } from "../src/features/gamification/GamificationContext";
+import { RemindersBanner } from "../src/features/timeline/RemindersBanner";
 import { TimelineWidget } from "../src/features/timeline/TimelineWidget";
-import { formatDaysLeft, last7DayDates, timeRemainingFraction } from "../src/lib/date";
+import { last7DayDates } from "../src/lib/date";
 import { useApi } from "../src/lib/useApi";
+import { useAuthedFocusEffect } from "../src/lib/useAuthedFocusEffect";
 import { useTheme } from "../src/theme/ThemeContext";
 import { spacing, typography } from "../src/theme/tokens";
 
 const QUEST_STATUS_ICON: Record<string, string> = { ACTIVE: "▸", COMPLETED: "✓", FAILED: "✗" };
-const MEDAL_ICON: Record<number, string> = { 1: "🥇", 2: "🥈", 3: "🥉" };
 const TASKS_PER_WEEK_GROUP_THRESHOLD = 10;
 
 /** Понедельник той недели, куда попадает дата — как ключ группировки "Неделя от DD.MM". */
@@ -42,19 +42,51 @@ function groupTasksByWeek(tasks: DailyTaskDto[]): [string, DailyTaskDto[]][] {
   return [...groups.entries()];
 }
 
+/**
+ * Дневная результативность: доля выполненных сегодня задач, взвешенная по
+ * приоритету родительского Эпика (вес = приоритет + 1, чтобы Эпики с
+ * приоритетом 0 тоже что-то весили) — задачи из более приоритетных Эпиков
+ * дают больше процентов, как и было явно попрошено.
+ */
+function computePerformance(tasks: TodayTaskDto[]): { percent: number; completed: number; total: number } {
+  if (tasks.length === 0) return { percent: 0, completed: 0, total: 0 };
+  let doneWeight = 0;
+  let totalWeight = 0;
+  let completed = 0;
+  for (const task of tasks) {
+    const weight = task.epicPriority + 1;
+    totalWeight += weight;
+    if (task.completedToday) {
+      doneWeight += weight;
+      completed += 1;
+    }
+  }
+  return { percent: totalWeight > 0 ? Math.round((doneWeight / totalWeight) * 100) : 0, completed, total: tasks.length };
+}
+
 export default function HomeScreen() {
   const { status, user, logout } = useAuth();
-  const { character, epicWins, loading, refreshCharacter, refreshEpicWins } = useGamification();
+  const { epicWins, loading, refreshEpicWins } = useGamification();
   const router = useRouter();
   const api = useApi();
   const styles = useStyles();
-  const { theme } = useTheme();
   const [expandedEpicId, setExpandedEpicId] = useState<string | null>(null);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
   const [questDetails, setQuestDetails] = useState<Record<string, QuestDto>>({});
   const [questLoadingId, setQuestLoadingId] = useState<string | null>(null);
   const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const [todayTasks, setTodayTasks] = useState<TodayTaskDto[]>([]);
   const weekDates = useMemo(last7DayDates, []);
+
+  const loadToday = useCallback(async () => {
+    try {
+      setTodayTasks(await api.get<TodayTaskDto[]>("/daily-tasks/today"));
+    } catch {
+      // Молча пропускаем — виджет результативности просто не покажется.
+    }
+  }, [api]);
+
+  useAuthedFocusEffect(loadToday);
 
   const fetchQuestDetail = useCallback(
     async (questId: string) => {
@@ -88,7 +120,7 @@ export default function HomeScreen() {
       } else {
         await api.post(`/daily-tasks/${task.id}/complete`, { date });
       }
-      await Promise.all([fetchQuestDetail(task.questId), refreshCharacter()]);
+      await Promise.all([fetchQuestDetail(task.questId), refreshEpicWins(), loadToday()]);
     } catch {
       // Молча пропускаем — ячейка просто не переключится.
     } finally {
@@ -101,7 +133,7 @@ export default function HomeScreen() {
   }
 
   async function onRefresh() {
-    await Promise.all([refreshCharacter(), refreshEpicWins()]);
+    await Promise.all([refreshEpicWins(), loadToday()]);
   }
 
   function onToggleEpic(epicId: string) {
@@ -128,9 +160,7 @@ export default function HomeScreen() {
   }
 
   const expandedEpic = epicWins.find((e) => e.id === expandedEpicId) ?? null;
-  // "Скиллы в прокачке" — активные Эпики рядом с карточкой персонажа: те же цели,
-  // что и в сетке ниже, но компактно, с прогрессом и таймингом дедлайна на виду.
-  const skillEpics = epicWins.filter((e) => e.status === "ACTIVE").slice(0, 6);
+  const performance = computePerformance(todayTasks);
 
   return (
     <ThemedBackground>
@@ -151,47 +181,17 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {character ? (
-          <View style={styles.dashboardRow}>
-            <Pressable onPress={() => router.push("/character")} style={styles.characterCardWrapper}>
-              <Card style={styles.characterCard}>
-                <View style={styles.characterHeaderRow}>
-                  <CharacterPortrait avatarIcon={character.avatarIcon} equipped={character.equipped} size="large" />
-                  <View style={styles.characterHeaderInfo}>
-                    <Text style={styles.characterTitle}>Уровень {character.level}</Text>
-                    <Text style={styles.characterName} numberOfLines={1}>
-                      {user.displayName || user.email}
-                    </Text>
-                    <Text style={styles.characterHint}>Персонаж и экипировка →</Text>
-
-                    <View style={styles.compactBarRow}>
-                      <Text style={styles.compactBarLabel}>XP</Text>
-                      <View style={styles.compactBarTrack}>
-                        <ProgressBar value={character.xp / character.xpToNextLevel} color={theme.colors.accent} height={12} />
-                      </View>
-                    </View>
-                    <View style={styles.compactBarRow}>
-                      <Text style={styles.compactBarLabel}>HP</Text>
-                      <View style={styles.compactBarTrack}>
-                        <ProgressBar value={character.hp / character.maxHp} color={theme.colors.danger} height={12} />
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </Card>
-            </Pressable>
-
-            {skillEpics.length > 0 ? (
-              <View style={styles.skillsPanel}>
-                <Text style={styles.skillsPanelTitle}>Скиллы в прокачке</Text>
-                {skillEpics.map((epic) => (
-                  <SkillChip key={epic.id} epic={epic} onPress={() => router.push(`/epic-wins/${epic.id}`)} />
-                ))}
-              </View>
-            ) : null}
-          </View>
+        {todayTasks.length > 0 ? (
+          <Card style={styles.performanceCard}>
+            <Text style={styles.performanceTitle}>Сегодня: результативность {performance.percent}%</Text>
+            <ProgressBar value={performance.percent / 100} color={progressColor(performance.percent)} height={14} />
+            <Text style={styles.performanceMeta}>
+              Выполнено {performance.completed} из {performance.total} — приоритетные задачи весят больше.
+            </Text>
+          </Card>
         ) : null}
 
+        <RemindersBanner />
         <TimelineWidget />
 
         <View style={styles.navRow}>
@@ -203,11 +203,6 @@ export default function HomeScreen() {
           </Pressable>
           <Pressable style={styles.navItem} onPress={() => router.push("/timeline")}>
             <Text style={styles.navItemText}>🗓 Таймлайн</Text>
-          </Pressable>
-        </View>
-        <View style={styles.navRow}>
-          <Pressable style={styles.navItemWide} onPress={() => router.push("/character")}>
-            <Text style={styles.navItemText}>🎒 Персонаж и экипировка</Text>
           </Pressable>
         </View>
         <View style={styles.navRow}>
@@ -265,40 +260,11 @@ export default function HomeScreen() {
   );
 }
 
-interface SkillChipProps {
-  epic: EpicWinSummaryDto;
-  onPress: () => void;
-}
-
-/** Компактная строка "скилла" рядом с карточкой персонажа: название Эпика, прогресс, дедлайн. */
-function SkillChip({ epic, onPress }: SkillChipProps) {
-  const styles = useStyles();
-  const { theme } = useTheme();
-
-  return (
-    <Pressable onPress={onPress} style={styles.skillChip}>
-      <View style={styles.skillChipHeader}>
-        {epic.rank ? <Text style={styles.skillChipMedal}>{MEDAL_ICON[epic.rank]}</Text> : null}
-        <Text style={styles.skillChipTitle} numberOfLines={1}>
-          {epic.title}
-        </Text>
-      </View>
-
-      <ProgressBar value={epic.progress / 100} color={theme.colors.accent} height={6} />
-      <Text style={styles.skillChipMeta}>{epic.progress}% пройдено</Text>
-
-      {epic.deadline ? (
-        <View style={styles.skillChipSecondBar}>
-          <ProgressBar
-            value={timeRemainingFraction(epic.createdAt, epic.deadline)}
-            color={theme.colors.secondary}
-            height={6}
-          />
-          <Text style={styles.skillChipMeta}>{formatDaysLeft(epic.deadline)}</Text>
-        </View>
-      ) : null}
-    </Pressable>
-  );
+/** Цвет полосы результативности: красный/жёлтый/зелёный в зависимости от %. */
+function progressColor(percent: number): string {
+  if (percent >= 70) return "#3ba55c";
+  if (percent >= 40) return "#d9a441";
+  return "#d94848";
 }
 
 interface EpicTileProps {
@@ -311,22 +277,28 @@ interface EpicTileProps {
 
 function EpicTile({ epic, expanded, onToggle, onOpen, onChangePriority }: EpicTileProps) {
   const styles = useStyles();
-  const { theme } = useTheme();
+  const hasMetric = epic.metricTargetValue !== null && epic.metricStartValue !== null;
 
   return (
     <Pressable onPress={onToggle} onLongPress={onOpen} style={styles.epicTileWrapper}>
       <Card style={[styles.epicTile, expanded && styles.epicTileExpanded]}>
-        <View style={styles.epicTileHeader}>
-          {epic.rank ? <Text style={styles.medal}>{MEDAL_ICON[epic.rank]}</Text> : null}
-          <Text style={styles.epicTileTitle} numberOfLines={2}>
-            {epic.title}
-          </Text>
-        </View>
+        <Text style={styles.epicTileTitle} numberOfLines={2}>
+          {epic.title}
+        </Text>
 
-        <SegmentedTimelineBar quests={epic.quests} height={8} />
+        {hasMetric ? (
+          <Text style={styles.epicTileMeta}>
+            Сейчас: {epic.metricCurrentValue ?? epic.metricStartValue} {epic.metricUnit} · Цель: {epic.metricTargetValue}{" "}
+            {epic.metricUnit}
+          </Text>
+        ) : null}
         <Text style={styles.epicTileMeta}>
           {epic.progress}% · {epic.questCount} {epic.questCount === 1 ? "квест" : "квестов"}
         </Text>
+
+        <View style={styles.epicTileHeatmap}>
+          <ActivityHeatmap days={epic.activity} compact />
+        </View>
 
         {epic.isOwner ? (
           <View style={styles.priorityRow}>
@@ -364,6 +336,7 @@ function QuestRow({ quest, expanded, detail, loading, onToggle, onToggleWeekDay,
       <Pressable onPress={onToggle}>
         <Text style={styles.questRow} numberOfLines={1}>
           {expanded ? "▾" : QUEST_STATUS_ICON[quest.status] ?? "▸"} {quest.title}
+          {quest.assignedToName ? ` · ${quest.assignedToName}` : ""}
         </Text>
       </Pressable>
 
@@ -399,7 +372,7 @@ interface TaskRowProps {
 
 function TaskRow({ task, onToggleWeekDay, pendingDay }: TaskRowProps) {
   const styles = useStyles();
-  const isQuantified = Boolean(task.unit && task.xpPerUnit);
+  const isQuantified = Boolean(task.unit);
   return (
     <View style={styles.taskRow}>
       <Text style={styles.taskRowTitle} numberOfLines={1}>
@@ -434,31 +407,15 @@ function useStyles() {
           borderWidth: 2,
           borderColor: theme.colors.ink,
         },
-        dashboardRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginBottom: spacing.lg, marginTop: spacing.md },
-        characterCardWrapper: { flexGrow: 1, flexBasis: 280 },
-        characterCard: { flex: 1 },
-        characterHeaderRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-        characterHeaderInfo: { flex: 1 },
-        characterHint: { fontSize: typography.sizeSm, color: theme.colors.accent, fontWeight: "700", marginBottom: spacing.sm },
-        skillsPanel: { flexGrow: 1, flexBasis: 220, gap: spacing.sm },
-        skillsPanelTitle: {
-          fontSize: typography.sizeSm,
+        performanceCard: { marginTop: spacing.md, marginBottom: spacing.lg },
+        performanceTitle: {
+          fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,
-          color: theme.colors.muted,
-          textTransform: "uppercase",
-          marginBottom: spacing.xs,
+          fontFamily: theme.headingFontFamily,
+          color: theme.colors.ink,
+          marginBottom: spacing.sm,
         },
-        skillChip: {
-          borderWidth: 2,
-          borderColor: theme.colors.ink,
-          backgroundColor: theme.colors.surface,
-          padding: spacing.sm,
-        },
-        skillChipHeader: { flexDirection: "row", alignItems: "center", marginBottom: spacing.xs },
-        skillChipMedal: { fontSize: typography.sizeSm, marginRight: spacing.xs },
-        skillChipTitle: { flex: 1, fontSize: typography.sizeSm, fontWeight: typography.weightBold, color: theme.colors.ink },
-        skillChipMeta: { fontSize: 11, color: theme.colors.muted, marginTop: spacing.xs },
-        skillChipSecondBar: { marginTop: spacing.sm },
+        performanceMeta: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.sm },
         navRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
         navItem: {
           flex: 1,
@@ -478,16 +435,6 @@ function useStyles() {
           marginBottom: spacing.lg,
         },
         navItemText: { fontWeight: typography.weightBold, color: theme.colors.ink, fontSize: typography.sizeSm },
-        characterTitle: {
-          fontSize: typography.sizeXl,
-          fontWeight: typography.weightBold,
-          fontFamily: theme.headingFontFamily,
-          color: theme.colors.ink,
-        },
-        characterName: { fontSize: typography.sizeMd, color: theme.colors.muted },
-        compactBarRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.xs, gap: spacing.xs },
-        compactBarLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.muted, width: 24 },
-        compactBarTrack: { flex: 1 },
         sectionTitle: {
           fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,
@@ -501,11 +448,10 @@ function useStyles() {
         epicTileWrapper: { width: "48%" },
         epicTile: { padding: spacing.sm },
         epicTileExpanded: { borderColor: theme.colors.primary },
-        epicTileHeader: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.xs },
-        medal: { fontSize: typography.sizeMd, marginRight: spacing.xs },
-        epicTileTitle: { flex: 1, fontSize: typography.sizeSm, fontWeight: typography.weightBold, color: theme.colors.ink },
-        epicTileMeta: { fontSize: 11, color: theme.colors.muted, marginTop: spacing.xs },
-        priorityRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.xs, gap: spacing.xs },
+        epicTileTitle: { fontSize: typography.sizeSm, fontWeight: typography.weightBold, color: theme.colors.ink, marginBottom: spacing.xs },
+        epicTileMeta: { fontSize: 11, color: theme.colors.muted, marginTop: 2 },
+        epicTileHeatmap: { marginTop: spacing.sm },
+        priorityRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.sm, gap: spacing.xs },
         priorityButton: {
           width: 20,
           height: 20,

@@ -6,7 +6,6 @@ import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
 import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
-import { useGamification } from "../../../src/features/gamification/GamificationContext";
 import { last7DayDates } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
 import { useAuthedFocusEffect } from "../../../src/lib/useAuthedFocusEffect";
@@ -19,7 +18,6 @@ export default function QuestDetailScreen() {
   const api = useApi();
   const { theme } = useTheme();
   const styles = useStyles();
-  const { refreshCharacter } = useGamification();
   const [quest, setQuest] = useState<QuestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
@@ -48,7 +46,7 @@ export default function QuestDetailScreen() {
     } else {
       await api.post(`/daily-tasks/${task.id}/complete`, {});
     }
-    await Promise.all([load(), refreshCharacter()]);
+    await load();
   }
 
   /** Тап по ячейке недельной сетки — отметить/снять выполнение простой задачи за конкретный день (не только сегодня). */
@@ -61,7 +59,7 @@ export default function QuestDetailScreen() {
       } else {
         await api.post(`/daily-tasks/${task.id}/complete`, { date });
       }
-      await Promise.all([load(), refreshCharacter()]);
+      await load();
     } catch {
       // Молча пропускаем — ячейка просто не переключится.
     } finally {
@@ -80,7 +78,7 @@ export default function QuestDetailScreen() {
     try {
       await api.post(`/daily-tasks/${task.id}/complete`, { quantity });
       setQuantityDrafts((prev) => ({ ...prev, [task.id]: "" }));
-      await Promise.all([load(), refreshCharacter()]);
+      await load();
     } catch (err) {
       setQuantityErrors((prev) => ({
         ...prev,
@@ -108,7 +106,7 @@ export default function QuestDetailScreen() {
         <View>
           <ScreenTitle style={styles.title}>{quest.title}</ScreenTitle>
           {quest.description ? <Text style={styles.description}>{quest.description}</Text> : null}
-          <Text style={styles.meta}>Награда за квест: {quest.xpReward} XP</Text>
+          {quest.assignedToName ? <Text style={styles.meta}>Назначен: {quest.assignedToName}</Text> : null}
 
           <Button label="+ Добавить ежедневную задачу" onPress={() => router.push(`/quests/${id}/tasks/new`)} />
           <Text style={styles.sectionTitle}>Ежедневные задачи</Text>
@@ -116,7 +114,7 @@ export default function QuestDetailScreen() {
       }
       ListEmptyComponent={!loading ? <Text style={styles.emptyText}>Задач пока нет.</Text> : null}
       renderItem={({ item: task }) => {
-        const isQuantified = Boolean(task.unit && task.xpPerUnit);
+        const isQuantified = Boolean(task.unit);
 
         return (
           <Card style={styles.taskCard}>
@@ -134,16 +132,7 @@ export default function QuestDetailScreen() {
               <View style={styles.taskInfo}>
                 <Text style={styles.taskTitle}>{task.title}</Text>
                 {task.description ? <Text style={styles.taskDescription}>{task.description}</Text> : null}
-                {isQuantified ? (
-                  <Text style={styles.meta}>
-                    {task.xpPerUnit} XP за {task.unit}
-                    {task.streak > 0 ? ` · стрик ${task.streak} 🔥` : ""}
-                  </Text>
-                ) : (
-                  <Text style={styles.meta}>
-                    +{task.xpReward} XP{task.streak > 0 ? ` · стрик ${task.streak} 🔥` : ""}
-                  </Text>
-                )}
+                {task.streak > 0 ? <Text style={styles.meta}>Стрик {task.streak} 🔥</Text> : null}
 
                 {isQuantified ? (
                   <View style={styles.quantityRow}>

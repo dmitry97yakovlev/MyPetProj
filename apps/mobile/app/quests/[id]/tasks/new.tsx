@@ -21,7 +21,7 @@ export default function NewDailyTaskScreen() {
   const [category, setCategory] = useState<DailyTaskCategory>("MANDATORY");
   const [isQuantified, setIsQuantified] = useState(false);
   const [unit, setUnit] = useState("");
-  const [xpPerUnit, setXpPerUnit] = useState("");
+  const [tracksEpicMetric, setTracksEpicMetric] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -39,17 +39,12 @@ export default function NewDailyTaskScreen() {
     };
 
     if (isQuantified) {
-      const rate = Number(xpPerUnit);
       if (!unit.trim()) {
         setError("Укажи единицу измерения (например, км)");
         return;
       }
-      if (!Number.isFinite(rate) || rate <= 0) {
-        setError("XP за единицу должно быть целым числом больше нуля");
-        return;
-      }
       payload.unit = unit.trim();
-      payload.xpPerUnit = Math.round(rate);
+      payload.tracksEpicMetric = tracksEpicMetric;
     }
 
     setLoading(true);
@@ -98,21 +93,18 @@ export default function NewDailyTaskScreen() {
         </View>
 
         <Checkbox
-          label="Награда зависит от количества (например, км)"
+          label="Задача по количеству (например, км, минуты, кг)"
           value={isQuantified}
           onChange={setIsQuantified}
         />
 
         {isQuantified ? (
           <>
-            <Text style={styles.hint}>Например: единица «км», XP за единицу «10» → 5 км = +50 XP.</Text>
             <TextField label="Единица измерения" value={unit} onChangeText={setUnit} placeholder="км" />
-            <TextField
-              label="XP за единицу"
-              value={xpPerUnit}
-              onChangeText={setXpPerUnit}
-              placeholder="10"
-              keyboardType="numeric"
+            <Checkbox
+              label="Отмечать текущее значение как показатель цели Эпика (например, вес)"
+              value={tracksEpicMetric}
+              onChange={setTracksEpicMetric}
             />
           </>
         ) : null}

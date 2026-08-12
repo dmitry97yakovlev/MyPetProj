@@ -76,7 +76,7 @@ export default function LeaderboardScreen() {
               {entry.isMe ? " (ты)" : ""}
             </Text>
             <Text style={styles.meta}>
-              Уровень {entry.level} · {entry.xp} XP
+              {entry.completions30d} {entry.completions30d === 1 ? "выполнение" : "выполнений"} за 30 дней
             </Text>
           </View>
         </Card>

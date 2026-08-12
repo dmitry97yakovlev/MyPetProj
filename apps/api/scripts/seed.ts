@@ -9,28 +9,9 @@
 import "dotenv/config";
 import { prisma } from "../src/db";
 import { hashPassword } from "../src/modules/auth/password";
-import { ITEM_CATALOG } from "../src/modules/items/itemCatalog";
 
 const DEV_ADMIN_EMAIL = "admin@local.test";
 const DEV_ADMIN_PASSWORD = "admin";
-
-async function seedItemCatalog() {
-  for (const item of ITEM_CATALOG) {
-    await prisma.item.upsert({
-      where: { id: item.id },
-      create: item,
-      update: { name: item.name, slot: item.slot, rarity: item.rarity, icon: item.icon, bonusHp: item.bonusHp },
-    });
-  }
-
-  // Удаляем из каталога позиции, которых больше нет в ITEM_CATALOG (переименования/замены).
-  // Если предмет кто-то уже получил — InventoryItem удалится каскадом (см. schema.prisma), это ок для dev-сида.
-  const currentIds = ITEM_CATALOG.map((item) => item.id);
-  const { count } = await prisma.item.deleteMany({ where: { id: { notIn: currentIds } } });
-  if (count > 0) console.log(`Удалено устаревших позиций каталога: ${count}`);
-
-  console.log(`Каталог предметов синхронизирован: ${ITEM_CATALOG.length} шт.`);
-}
 
 async function seedDevAdmin() {
   if (process.env.NODE_ENV === "production") {
@@ -63,7 +44,6 @@ async function seedDevAdmin() {
 }
 
 async function main() {
-  await seedItemCatalog();
   await seedDevAdmin();
 }
 

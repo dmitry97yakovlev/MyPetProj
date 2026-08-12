@@ -2,6 +2,7 @@ import type { EpicWinDetailDto, QuestDto } from "@mypetproj/shared";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { ActivityHeatmap } from "../../../src/components/ActivityHeatmap";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { ProgressBar } from "../../../src/components/ProgressBar";
@@ -26,7 +27,7 @@ export default function EpicWinDetailScreen() {
   const api = useApi();
   const { theme } = useTheme();
   const styles = useStyles();
-  const { refreshCharacter, refreshEpicWins } = useGamification();
+  const { refreshEpicWins } = useGamification();
   const [epicWin, setEpicWin] = useState<EpicWinDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
@@ -50,12 +51,17 @@ export default function EpicWinDetailScreen() {
 
   async function onCompleteQuest(questId: string) {
     await api.post(`/quests/${questId}/complete`, {});
-    await Promise.all([load(), refreshCharacter(), refreshEpicWins()]);
+    await Promise.all([load(), refreshEpicWins()]);
   }
 
   async function onFailQuest(questId: string) {
     await api.post(`/quests/${questId}/fail`, {});
-    await Promise.all([load(), refreshCharacter(), refreshEpicWins()]);
+    await Promise.all([load(), refreshEpicWins()]);
+  }
+
+  async function onAssignQuest(questId: string, assignedToUserId: string | null) {
+    await api.patch(`/quests/${questId}`, { assignedToUserId });
+    await load();
   }
 
   /** Тап по ячейке недельной сетки — отметить/снять выполнение простой задачи за конкретный день. */
@@ -68,7 +74,7 @@ export default function EpicWinDetailScreen() {
       } else {
         await api.post(`/daily-tasks/${taskId}/complete`, { date });
       }
-      await Promise.all([load(), refreshCharacter()]);
+      await Promise.all([load(), refreshEpicWins()]);
     } catch {
       // Молча пропускаем — ячейка просто не переключится.
     } finally {
@@ -83,6 +89,9 @@ export default function EpicWinDetailScreen() {
       </View>
     );
   }
+
+  const hasMetric = epicWin.metricTargetValue !== null && epicWin.metricStartValue !== null;
+  const isShared = epicWin.members.length > 1;
 
   return (
     <FlatList
@@ -102,6 +111,13 @@ export default function EpicWinDetailScreen() {
             </Text>
           ) : null}
 
+          {hasMetric ? (
+            <Text style={styles.metricLine}>
+              Сейчас: {epicWin.metricCurrentValue ?? epicWin.metricStartValue} {epicWin.metricUnit} · Начало:{" "}
+              {epicWin.metricStartValue} {epicWin.metricUnit} · Цель: {epicWin.metricTargetValue} {epicWin.metricUnit}
+            </Text>
+          ) : null}
+
           <View style={styles.progressRow}>
             <View style={styles.progressBarWrapper}>
               <ProgressBar value={epicWin.progress / 100} color={theme.colors.success} />
@@ -109,7 +125,31 @@ export default function EpicWinDetailScreen() {
             <Text style={styles.progressLabel}>{epicWin.progress}%</Text>
           </View>
 
+          <Text style={styles.sectionTitle}>Активность</Text>
+          <ActivityHeatmap days={epicWin.activity} />
+
+          {isShared ? (
+            <>
+              <Text style={styles.sectionTitle}>Участники ({epicWin.members.length})</Text>
+              <View style={styles.membersRow}>
+                {epicWin.members.map((m) => (
+                  <Text key={m.userId} style={styles.memberChip}>
+                    {m.displayName || m.email}
+                    {m.role === "OWNER" ? " (владелец)" : ""}
+                  </Text>
+                ))}
+              </View>
+            </>
+          ) : null}
+
           <Button label="+ Добавить квест" onPress={() => router.push(`/epic-wins/${id}/quests/new`)} />
+          {epicWin.isOwner ? (
+            <Button
+              label="+ Пригласить друга"
+              variant="secondary"
+              onPress={() => router.push(`/epic-wins/${id}/invite`)}
+            />
+          ) : null}
           <Text style={styles.sectionTitle}>Квесты</Text>
           <Text style={styles.hint}>Разверни квест, чтобы увидеть неделю выполнения по каждой задаче.</Text>
         </View>
@@ -134,18 +174,41 @@ export default function EpicWinDetailScreen() {
                 </Text>
               ) : null}
               <Text style={styles.meta}>
-                {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"} · награда {quest.xpReward}{" "}
-                XP
+                {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"}
+                {quest.assignedToName ? ` · назначен: ${quest.assignedToName}` : ""}
               </Text>
             </Pressable>
 
             {expanded ? (
               <View style={styles.expandedArea}>
+                {isShared ? (
+                  <View style={styles.assignRow}>
+                    <Text style={styles.assignLabel}>Назначить:</Text>
+                    <Pressable
+                      onPress={() => onAssignQuest(quest.id, null)}
+                      style={[styles.assignChip, !quest.assignedToUserId && styles.assignChipActive]}
+                    >
+                      <Text style={styles.assignChipText}>Никому</Text>
+                    </Pressable>
+                    {epicWin.members.map((m) => (
+                      <Pressable
+                        key={m.userId}
+                        onPress={() => onAssignQuest(quest.id, m.userId)}
+                        style={[styles.assignChip, quest.assignedToUserId === m.userId && styles.assignChipActive]}
+                      >
+                        <Text style={styles.assignChipText} numberOfLines={1}>
+                          {m.displayName || m.email}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : null}
+
                 {quest.dailyTasks.length === 0 ? (
                   <Text style={styles.emptyTasksText}>Ежедневных задач пока нет.</Text>
                 ) : (
                   quest.dailyTasks.map((task) => {
-                    const isQuantified = Boolean(task.unit && task.xpPerUnit);
+                    const isQuantified = Boolean(task.unit);
                     return (
                       <View key={task.id} style={styles.taskRow}>
                         <Text style={styles.taskTitle}>{task.title}</Text>
@@ -195,7 +258,8 @@ function useStyles() {
         description: { fontSize: typography.sizeMd, color: theme.colors.muted, marginTop: spacing.xs, marginBottom: spacing.md },
         deadline: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.muted, marginTop: spacing.xs },
         deadlineOverdue: { color: theme.colors.danger },
-        progressRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.lg, gap: spacing.sm },
+        metricLine: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink, marginTop: spacing.sm },
+        progressRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.md, marginBottom: spacing.lg, gap: spacing.sm },
         progressBarWrapper: { flex: 1 },
         progressLabel: { fontWeight: "700", color: theme.colors.ink, width: 44, textAlign: "right" },
         sectionTitle: {
@@ -205,6 +269,17 @@ function useStyles() {
           color: theme.colors.ink,
           marginTop: spacing.lg,
           marginBottom: spacing.xs,
+        },
+        membersRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginBottom: spacing.md },
+        memberChip: {
+          fontSize: 11,
+          fontWeight: "700",
+          color: theme.colors.ink,
+          borderWidth: 1,
+          borderColor: theme.colors.ink,
+          backgroundColor: theme.colors.surface,
+          paddingVertical: 4,
+          paddingHorizontal: spacing.sm,
         },
         hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginBottom: spacing.sm },
         emptyText: { color: theme.colors.muted, marginTop: spacing.md },
@@ -220,6 +295,17 @@ function useStyles() {
           borderTopWidth: 1,
           borderTopColor: theme.colors.muted,
         },
+        assignRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.xs, marginBottom: spacing.md },
+        assignLabel: { fontSize: 11, fontWeight: "700", color: theme.colors.muted, textTransform: "uppercase" },
+        assignChip: {
+          borderWidth: 1,
+          borderColor: theme.colors.ink,
+          backgroundColor: theme.colors.background,
+          paddingVertical: 4,
+          paddingHorizontal: spacing.sm,
+        },
+        assignChipActive: { backgroundColor: theme.colors.secondary },
+        assignChipText: { fontSize: 11, fontWeight: "700", color: theme.colors.ink },
         emptyTasksText: { fontSize: typography.sizeSm, color: theme.colors.muted },
         taskRow: { marginBottom: spacing.md },
         taskTitle: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink },
