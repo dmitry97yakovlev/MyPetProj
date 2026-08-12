@@ -193,6 +193,7 @@ export interface EpicWinSummaryDto {
   title: string;
   description: string | null;
   deadline: string | null;
+  createdAt: string;
   status: EpicWinStatus;
   /** 0..100, доля завершённых квестов (по количеству, не по весу — для обратной совместимости). */
   progress: number;

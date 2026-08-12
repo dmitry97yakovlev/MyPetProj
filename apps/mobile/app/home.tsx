@@ -12,7 +12,7 @@ import { WeeklyGrid } from "../src/components/WeeklyGrid";
 import { useAuth } from "../src/features/auth/AuthContext";
 import { useGamification } from "../src/features/gamification/GamificationContext";
 import { TimelineWidget } from "../src/features/timeline/TimelineWidget";
-import { formatDaysLeft, last7DayDates } from "../src/lib/date";
+import { formatDaysLeft, last7DayDates, timeRemainingFraction } from "../src/lib/date";
 import { useApi } from "../src/lib/useApi";
 import { useTheme } from "../src/theme/ThemeContext";
 import { spacing, typography } from "../src/theme/tokens";
@@ -283,10 +283,20 @@ function SkillChip({ epic, onPress }: SkillChipProps) {
           {epic.title}
         </Text>
       </View>
+
       <ProgressBar value={epic.progress / 100} color={theme.colors.accent} height={6} />
-      <Text style={styles.skillChipMeta}>
-        {epic.progress}% пройдено{epic.deadline ? ` · ${formatDaysLeft(epic.deadline)}` : ""}
-      </Text>
+      <Text style={styles.skillChipMeta}>{epic.progress}% пройдено</Text>
+
+      {epic.deadline ? (
+        <View style={styles.skillChipSecondBar}>
+          <ProgressBar
+            value={timeRemainingFraction(epic.createdAt, epic.deadline)}
+            color={theme.colors.secondary}
+            height={6}
+          />
+          <Text style={styles.skillChipMeta}>{formatDaysLeft(epic.deadline)}</Text>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -448,6 +458,7 @@ function useStyles() {
         skillChipMedal: { fontSize: typography.sizeSm, marginRight: spacing.xs },
         skillChipTitle: { flex: 1, fontSize: typography.sizeSm, fontWeight: typography.weightBold, color: theme.colors.ink },
         skillChipMeta: { fontSize: 11, color: theme.colors.muted, marginTop: spacing.xs },
+        skillChipSecondBar: { marginTop: spacing.sm },
         navRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
         navItem: {
           flex: 1,

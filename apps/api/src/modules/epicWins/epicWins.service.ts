@@ -40,6 +40,7 @@ function toSummaryDto(epicWin: EpicWinWithRelations, viewerId: string, rank: num
     title: epicWin.title,
     description: epicWin.description,
     deadline: epicWin.deadline?.toISOString() ?? null,
+    createdAt: epicWin.createdAt.toISOString(),
     status: epicWin.status,
     progress: computeProgress(epicWin.quests),
     questCount: epicWin.quests.length,

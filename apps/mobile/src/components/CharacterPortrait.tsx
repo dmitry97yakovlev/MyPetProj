@@ -68,7 +68,7 @@ export function CharacterPortrait({ avatarIcon, equipped, size = "large", level,
         <View style={[styles.gem, styles.gemTopRight]} />
         <View style={[styles.gem, styles.gemBottomLeft]} />
         <View style={[styles.gem, styles.gemBottomRight]} />
-        <Image source={{ uri: character.imageUrl }} style={styles.image} resizeMode="cover" />
+        <Image source={{ uri: character.imageUrl }} style={styles.image} resizeMode="contain" />
 
         {equippedSlots.map((slot) => (
           <View key={slot} style={[styles.equipAnchor, SLOT_ANCHOR[slot]]}>
@@ -120,11 +120,17 @@ function useStyles() {
       frameCompact: { width: 60, height: 84, marginRight: spacing.md },
       frameLarge: { width: 120, height: 168, marginBottom: spacing.sm },
       frameHero: {
-        width: "100%",
-        height: 380,
+        // Уже, не во всю ширину, и с высотой, подобранной под портретный кадр
+        // иллюстраций (там же используется resizeMode="contain") — раньше
+        // широкая мелкая рамка с resizeMode="cover" обрезала почти всё тело,
+        // оставляя видимым только маленький кусок картинки.
+        width: "70%",
+        maxWidth: 340,
+        height: 460,
+        alignSelf: "center",
         borderWidth: 3,
         borderColor: theme.colors.primary,
-        backgroundColor: theme.colors.background,
+        backgroundColor: theme.colors.surface,
         overflow: "hidden",
         marginBottom: spacing.md,
         ...theme.hardShadow,

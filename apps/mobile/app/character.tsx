@@ -1,7 +1,7 @@
-import { AVATAR_CHARACTERS, type CatalogItemDto, type ItemRarity, type ItemSlot } from "@mypetproj/shared";
+import type { CatalogItemDto, ItemRarity, ItemSlot } from "@mypetproj/shared";
 import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../src/components/Card";
 import { CharacterPortrait } from "../src/components/CharacterPortrait";
 import { ProgressBar } from "../src/components/ProgressBar";
@@ -66,18 +66,6 @@ export default function CharacterScreen() {
     }
   }
 
-  async function onPickAvatar(icon: string) {
-    setBusyId(`avatar-${icon}`);
-    try {
-      await api.post("/character/avatar", { icon });
-      await refreshCharacter();
-    } catch {
-      // Тихо игнорируем — иконка просто не поменяется, кнопка снова активна.
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   async function onEquip(inventoryItemId: string) {
     setBusyId(inventoryItemId);
     try {
@@ -111,13 +99,6 @@ export default function CharacterScreen() {
     items: catalog.filter((item) => item.slot === slot),
   }));
   const unequippedInventory = character.inventory.filter((entry) => !entry.equipped);
-
-  const franchises: [string, typeof AVATAR_CHARACTERS][] = [];
-  for (const avatarCharacter of AVATAR_CHARACTERS) {
-    const group = franchises.find(([name]) => name === avatarCharacter.franchise);
-    if (group) group[1].push(avatarCharacter);
-    else franchises.push([avatarCharacter.franchise, [avatarCharacter]]);
-  }
 
   return (
     <ScrollView
@@ -153,28 +134,9 @@ export default function CharacterScreen() {
         <Text style={styles.hint}>Экипировка выпадает за завершённые квесты — чем лучше выполнен квест, тем реже редкость.</Text>
       </Card>
 
-      <Text style={styles.sectionTitle}>Персонаж</Text>
-      {franchises.map(([franchise, characters]) => (
-        <Card key={franchise} style={styles.card}>
-          <Text style={styles.franchiseTitle}>{franchise}</Text>
-          <View style={styles.avatarPickerRow}>
-            {characters.map((avatarCharacter) => {
-              const active = avatarCharacter.id === character.avatarIcon;
-              return (
-                <Pressable
-                  key={avatarCharacter.id}
-                  onPress={() => onPickAvatar(avatarCharacter.id)}
-                  disabled={busyId === `avatar-${avatarCharacter.id}`}
-                  style={[styles.avatarOption, active && styles.avatarOptionActive]}
-                >
-                  <Image source={{ uri: avatarCharacter.imageUrl }} style={styles.avatarOptionImage} resizeMode="cover" />
-                  <Text style={styles.avatarOptionName}>{avatarCharacter.name}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Card>
-      ))}
+      <Pressable onPress={() => router.push("/settings")}>
+        <Text style={styles.changeAvatarLink}>Сменить персонажа → в Настройках</Text>
+      </Pressable>
 
       <Text style={styles.sectionTitle}>Экипировано</Text>
       <View style={styles.slotsRow}>
@@ -259,20 +221,16 @@ function useStyles() {
         backRow: { alignSelf: "flex-start", marginBottom: spacing.sm },
         backText: { fontSize: typography.sizeMd, fontWeight: "700", color: theme.colors.accent },
         card: { marginBottom: spacing.lg },
-        portraitRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-        statsInfo: { flex: 1 },
-        level: {
-          fontSize: typography.sizeLg,
-          fontWeight: typography.weightBold,
-          fontFamily: theme.headingFontFamily,
-          color: theme.colors.ink,
-          marginBottom: spacing.xs,
-          textAlign: "center",
-        },
-        characterName: { fontSize: typography.sizeSm, color: theme.colors.muted, textAlign: "center", marginBottom: spacing.sm },
         barLabel: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink, marginBottom: spacing.xs },
         spacedLabel: { marginTop: spacing.sm },
         hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.md },
+        changeAvatarLink: {
+          fontSize: typography.sizeSm,
+          fontWeight: "700",
+          color: theme.colors.accent,
+          marginTop: spacing.sm,
+          marginBottom: spacing.lg,
+        },
         sectionTitle: {
           fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,
@@ -281,25 +239,6 @@ function useStyles() {
           marginTop: spacing.md,
           marginBottom: spacing.sm,
         },
-        franchiseTitle: {
-          fontSize: typography.sizeSm,
-          fontWeight: typography.weightBold,
-          color: theme.colors.accent,
-          textTransform: "uppercase",
-          marginBottom: spacing.sm,
-        },
-        avatarPickerRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-        avatarOption: {
-          width: 96,
-          borderWidth,
-          borderColor: theme.colors.ink,
-          backgroundColor: theme.colors.background,
-          alignItems: "center",
-          padding: 2,
-        },
-        avatarOptionActive: { borderColor: theme.colors.primary, borderWidth: borderWidth + 1 },
-        avatarOptionImage: { width: 92, height: 124 },
-        avatarOptionName: { fontSize: 11, fontWeight: "700", color: theme.colors.ink, marginTop: 2, textAlign: "center" },
         slotsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
         slotCard: { width: 100, alignItems: "center" },
         slotLabel: {

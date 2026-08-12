@@ -24,6 +24,15 @@ export function formatDaysLeft(iso: string): string {
   return `осталось ${days} дн.`;
 }
 
+/** Доля оставшегося времени (0..1) между началом (createdAt) и дедлайном — для второй полосы в виджете скиллов. */
+export function timeRemainingFraction(createdAtIso: string, deadlineIso: string): number {
+  const start = new Date(createdAtIso).getTime();
+  const end = new Date(deadlineIso).getTime();
+  const now = Date.now();
+  if (end <= start) return 0;
+  return Math.max(0, Math.min(1, (end - now) / (end - start)));
+}
+
 /** 7 дат (YYYY-MM-DD) для ячеек last7Days, от самой старой к сегодняшней (см. DailyTaskDto.last7Days). */
 export function last7DayDates(): string[] {
   const today = new Date();
