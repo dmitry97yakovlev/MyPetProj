@@ -4,6 +4,8 @@ import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { addUtcDays, isoDate, startOfUtcDay } from "../../lib/date";
 import { assertDailyTaskAccess, assertQuestAccess } from "../access";
+import { deleteAttachmentsFor } from "../attachments/attachments.service";
+import { deleteCommentsFor } from "../comments/comments.service";
 
 export type DailyTaskWithCompletions = DailyTask & { completions: TaskCompletion[] };
 
@@ -75,6 +77,11 @@ async function loadWithCompletions(dailyTaskId: string, userId: string): Promise
   });
 }
 
+export async function getDailyTask(dailyTaskId: string, userId: string): Promise<DailyTaskDto> {
+  await assertDailyTaskAccess(dailyTaskId, userId);
+  return toDailyTaskDto(await loadWithCompletions(dailyTaskId, userId));
+}
+
 export async function createDailyTask(
   questId: string,
   userId: string,
@@ -119,6 +126,7 @@ export async function updateDailyTask(
 export async function deleteDailyTask(dailyTaskId: string, userId: string): Promise<void> {
   await assertDailyTaskAccess(dailyTaskId, userId);
   await prisma.dailyTask.delete({ where: { id: dailyTaskId } });
+  await Promise.all([deleteCommentsFor("DAILY_TASK", dailyTaskId), deleteAttachmentsFor("DAILY_TASK", dailyTaskId)]);
 }
 
 /**

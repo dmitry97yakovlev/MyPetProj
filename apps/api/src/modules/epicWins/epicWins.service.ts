@@ -12,6 +12,8 @@ import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { addUtcDays, isoDate, startOfUtcDay } from "../../lib/date";
 import { assertEpicWinAccess } from "../access";
+import { deleteAttachmentsFor } from "../attachments/attachments.service";
+import { deleteCommentsFor } from "../comments/comments.service";
 import { toQuestDto } from "../quests/quests.service";
 
 const epicWinInclude = (userId: string) =>
@@ -194,6 +196,7 @@ export async function deleteEpicWin(epicWinId: string, userId: string): Promise<
   const existing = await assertEpicWinAccess(epicWinId, userId);
   if (existing.ownerId !== userId) throw new AppError(403, "Удалить Epic Win может только владелец");
   await prisma.epicWin.delete({ where: { id: epicWinId } });
+  await Promise.all([deleteCommentsFor("EPIC_WIN", epicWinId), deleteAttachmentsFor("EPIC_WIN", epicWinId)]);
 }
 
 export async function inviteMember(

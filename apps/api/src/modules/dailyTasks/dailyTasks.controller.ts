@@ -5,6 +5,7 @@ import { type AuthedRequest, requireAuth } from "../../middleware/requireAuth";
 import {
   completeDailyTask,
   deleteDailyTask,
+  getDailyTask,
   listTodayTasks,
   uncompleteDailyTask,
   updateDailyTask,
@@ -17,6 +18,13 @@ dailyTasksRouter.get(
   "/today",
   asyncHandler(async (req: AuthedRequest, res) => {
     res.json(await listTodayTasks(req.userId!));
+  }),
+);
+
+dailyTasksRouter.get(
+  "/:id",
+  asyncHandler(async (req: AuthedRequest, res) => {
+    res.json(await getDailyTask(req.params.id, req.userId!));
   }),
 );
 

@@ -4,7 +4,9 @@ import { useCallback, useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from "react-native";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
+import { CommentsAndAttachments } from "../../../src/components/CommentsAndAttachments";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
+import { TextField } from "../../../src/components/TextField";
 import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { last7DayDates } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
@@ -20,25 +22,52 @@ export default function QuestDetailScreen() {
   const styles = useStyles();
   const [quest, setQuest] = useState<QuestDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [quantityDrafts, setQuantityDrafts] = useState<Record<string, string>>({});
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
   const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
   const weekDates = useMemo(last7DayDates, []);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await api.get<QuestDto>(`/quests/${id}`);
       setQuest(data);
-    } catch {
-      // Молча пропускаем — RefreshControl просто перестанет крутиться.
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Не удалось загрузить квест");
     } finally {
       setLoading(false);
     }
   }, [id, api]);
 
   useAuthedFocusEffect(load);
+
+  function onStartEdit() {
+    if (!quest) return;
+    setTitleDraft(quest.title);
+    setDescriptionDraft(quest.description ?? "");
+    setEditing(true);
+  }
+
+  async function onSaveEdit() {
+    if (!titleDraft.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/quests/${id}`, { title: titleDraft.trim(), description: descriptionDraft.trim() || null });
+      setEditing(false);
+      await load();
+    } catch {
+      // Молча пропускаем — форма редактирования просто останется открытой.
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function onToggle(task: DailyTaskDto) {
     if (task.completedToday) {
@@ -90,7 +119,9 @@ export default function QuestDetailScreen() {
   if (!quest) {
     return (
       <View style={styles.screen}>
-        <Text style={styles.title}>{loading ? "Загрузка…" : "Не найдено"}</Text>
+        <Text style={styles.title}>{loading ? "Загрузка…" : loadError ? "Ошибка загрузки" : "Не найдено"}</Text>
+        {loadError ? <Text style={styles.meta}>{loadError}</Text> : null}
+        {loadError ? <Button label="Повторить" variant="secondary" onPress={load} /> : null}
       </View>
     );
   }
@@ -104,8 +135,25 @@ export default function QuestDetailScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       ListHeaderComponent={
         <View>
-          <ScreenTitle style={styles.title}>{quest.title}</ScreenTitle>
-          {quest.description ? <Text style={styles.description}>{quest.description}</Text> : null}
+          {editing ? (
+            <View style={styles.editBox}>
+              <TextField label="Название" value={titleDraft} onChangeText={setTitleDraft} />
+              <TextField label="Описание" value={descriptionDraft} onChangeText={setDescriptionDraft} multiline />
+              <View style={styles.editActionsRow}>
+                <View style={styles.editActionButton}>
+                  <Button label={savingEdit ? "Сохраняем…" : "Сохранить"} onPress={onSaveEdit} disabled={savingEdit} />
+                </View>
+                <View style={styles.editActionButton}>
+                  <Button label="Отмена" variant="secondary" onPress={() => setEditing(false)} />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Pressable onPress={onStartEdit}>
+              <ScreenTitle style={styles.title}>{quest.title} ✎</ScreenTitle>
+              {quest.description ? <Text style={styles.description}>{quest.description}</Text> : null}
+            </Pressable>
+          )}
           {quest.assignedToName ? <Text style={styles.meta}>Назначен: {quest.assignedToName}</Text> : null}
 
           <Button label="+ Добавить ежедневную задачу" onPress={() => router.push(`/quests/${id}/tasks/new`)} />
@@ -130,7 +178,9 @@ export default function QuestDetailScreen() {
                 </Pressable>
               )}
               <View style={styles.taskInfo}>
-                <Text style={styles.taskTitle}>{task.title}</Text>
+                <Pressable onPress={() => router.push(`/daily-tasks/${task.id}`)}>
+                  <Text style={styles.taskTitle}>{task.title} →</Text>
+                </Pressable>
                 {task.description ? <Text style={styles.taskDescription}>{task.description}</Text> : null}
                 {task.streak > 0 ? <Text style={styles.meta}>Стрик {task.streak} 🔥</Text> : null}
 
@@ -163,6 +213,11 @@ export default function QuestDetailScreen() {
           </Card>
         );
       }}
+      ListFooterComponent={
+        <View style={styles.footer}>
+          <CommentsAndAttachments targetType="QUEST" targetId={id!} />
+        </View>
+      }
     />
   );
 }
@@ -216,6 +271,10 @@ function useStyles() {
         },
         doneToday: { fontSize: typography.sizeSm, color: theme.colors.success, marginTop: spacing.xs, fontWeight: "600" },
         error: { color: theme.colors.danger, marginTop: spacing.xs, fontWeight: "600" },
+        editBox: { marginBottom: spacing.sm },
+        editActionsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+        editActionButton: { flex: 1 },
+        footer: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: theme.colors.muted },
       }),
     [theme],
   );

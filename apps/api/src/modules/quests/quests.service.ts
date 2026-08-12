@@ -3,6 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { assertEpicWinAccess, assertQuestAccess } from "../access";
+import { deleteAttachmentsFor } from "../attachments/attachments.service";
+import { deleteCommentsFor } from "../comments/comments.service";
 import { toDailyTaskDto } from "../dailyTasks/dailyTasks.service";
 
 const questInclude = (userId: string) =>
@@ -86,6 +88,7 @@ export async function updateQuest(questId: string, userId: string, input: Update
 export async function deleteQuest(questId: string, userId: string): Promise<void> {
   await assertQuestAccess(questId, userId);
   await prisma.quest.delete({ where: { id: questId } });
+  await Promise.all([deleteCommentsFor("QUEST", questId), deleteAttachmentsFor("QUEST", questId)]);
 }
 
 export async function completeQuest(questId: string, userId: string): Promise<QuestDto> {

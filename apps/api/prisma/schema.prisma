@@ -28,6 +28,8 @@ model User {
   journalEntries     JournalEntry[]
   moodEntries        MoodEntry[]
   assignedQuests     Quest[]         @relation("QuestAssignee")
+  comments           Comment[]
+  attachments        Attachment[]
   sentFriendRequests     FriendRequest[] @relation("FriendRequestsSent")
   receivedFriendRequests FriendRequest[] @relation("FriendRequestsReceived")
 
@@ -262,4 +264,48 @@ model MoodEntry {
 
   @@unique([userId, date])
   @@map("mood_entries")
+}
+
+// Comment/Attachment полиморфны по (targetType, targetId) — единый механизм
+// для Эпика/Квеста/Задачи, а не три отдельные таблицы-дубликата. Без
+// декларативного FK на конкретную сущность (Prisma не умеет полиморфные
+// relations); ссылочная целостность и удаление "хвостов" при удалении самой
+// сущности сделаны вручную в comments.service.ts/attachments.service.ts.
+enum EntityType {
+  EPIC_WIN
+  QUEST
+  DAILY_TASK
+}
+
+model Comment {
+  id         String     @id @default(uuid())
+  targetType EntityType
+  targetId   String
+  authorId   String
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body       String
+
+  createdAt DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("comments")
+}
+
+model Attachment {
+  id         String     @id @default(uuid())
+  targetType EntityType
+  targetId   String
+  uploaderId String
+  uploader   User       @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  fileName  String
+  // Относительный путь на сервере (см. /uploads, как и голосовые заметки дневника).
+  url       String
+  mimeType  String
+  sizeBytes Int
+
+  createdAt DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@map("attachments")
 }

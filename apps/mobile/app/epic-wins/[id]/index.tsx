@@ -5,8 +5,10 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "rea
 import { ActivityHeatmap } from "../../../src/components/ActivityHeatmap";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
+import { CommentsAndAttachments } from "../../../src/components/CommentsAndAttachments";
 import { ProgressBar } from "../../../src/components/ProgressBar";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
+import { TextField } from "../../../src/components/TextField";
 import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
 import { formatDeadline, isOverdue, last7DayDates } from "../../../src/lib/date";
@@ -30,24 +32,51 @@ export default function EpicWinDetailScreen() {
   const { refreshEpicWins } = useGamification();
   const [epicWin, setEpicWin] = useState<EpicWinDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
   const [pendingDay, setPendingDay] = useState<{ taskId: string; dayIndex: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [descriptionDraft, setDescriptionDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
   const weekDates = useMemo(last7DayDates, []);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await api.get<EpicWinDetailDto>(`/epic-wins/${id}`);
       setEpicWin(data);
-    } catch {
-      // Молча пропускаем — RefreshControl просто перестанет крутиться.
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Не удалось загрузить Эпик");
     } finally {
       setLoading(false);
     }
   }, [id, api]);
 
   useAuthedFocusEffect(load);
+
+  function onStartEdit() {
+    if (!epicWin) return;
+    setTitleDraft(epicWin.title);
+    setDescriptionDraft(epicWin.description ?? "");
+    setEditing(true);
+  }
+
+  async function onSaveEdit() {
+    if (!titleDraft.trim()) return;
+    setSavingEdit(true);
+    try {
+      await api.patch(`/epic-wins/${id}`, { title: titleDraft.trim(), description: descriptionDraft.trim() || null });
+      setEditing(false);
+      await Promise.all([load(), refreshEpicWins()]);
+    } catch {
+      // Молча пропускаем — форма редактирования просто останется открытой.
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function onCompleteQuest(questId: string) {
     await api.post(`/quests/${questId}/complete`, {});
@@ -85,7 +114,9 @@ export default function EpicWinDetailScreen() {
   if (!epicWin) {
     return (
       <View style={styles.screen}>
-        <Text style={styles.title}>{loading ? "Загрузка…" : "Не найдено"}</Text>
+        <Text style={styles.title}>{loading ? "Загрузка…" : loadError ? "Ошибка загрузки" : "Не найдено"}</Text>
+        {loadError ? <Text style={styles.hint}>{loadError}</Text> : null}
+        {loadError ? <Button label="Повторить" variant="secondary" onPress={load} /> : null}
       </View>
     );
   }
@@ -102,8 +133,25 @@ export default function EpicWinDetailScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       ListHeaderComponent={
         <View>
-          <ScreenTitle style={styles.title}>{epicWin.title}</ScreenTitle>
-          {epicWin.description ? <Text style={styles.description}>{epicWin.description}</Text> : null}
+          {editing ? (
+            <View style={styles.editBox}>
+              <TextField label="Название" value={titleDraft} onChangeText={setTitleDraft} />
+              <TextField label="Описание" value={descriptionDraft} onChangeText={setDescriptionDraft} multiline />
+              <View style={styles.editActionsRow}>
+                <View style={styles.editActionButton}>
+                  <Button label={savingEdit ? "Сохраняем…" : "Сохранить"} onPress={onSaveEdit} disabled={savingEdit} />
+                </View>
+                <View style={styles.editActionButton}>
+                  <Button label="Отмена" variant="secondary" onPress={() => setEditing(false)} />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Pressable onPress={onStartEdit}>
+              <ScreenTitle style={styles.title}>{epicWin.title} ✎</ScreenTitle>
+              {epicWin.description ? <Text style={styles.description}>{epicWin.description}</Text> : null}
+            </Pressable>
+          )}
           {epicWin.deadline ? (
             <Text style={[styles.deadline, isOverdue(epicWin.deadline) && styles.deadlineOverdue]}>
               Дедлайн: {formatDeadline(epicWin.deadline)}
@@ -242,6 +290,11 @@ export default function EpicWinDetailScreen() {
           </Card>
         );
       }}
+      ListFooterComponent={
+        <View style={styles.footer}>
+          <CommentsAndAttachments targetType="EPIC_WIN" targetId={id!} />
+        </View>
+      }
     />
   );
 }
@@ -312,6 +365,10 @@ function useStyles() {
         openLink: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.accent, marginTop: spacing.xs },
         questActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
         questActionButton: { flex: 1 },
+        editBox: { marginBottom: spacing.sm },
+        editActionsRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+        editActionButton: { flex: 1 },
+        footer: { marginTop: spacing.lg, paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: theme.colors.muted },
       }),
     [theme],
   );

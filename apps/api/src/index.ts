@@ -3,7 +3,9 @@ import express from "express";
 import path from "node:path";
 import { env } from "./env";
 import { coachRouter } from "./modules/aiCoach/aiCoach.controller";
+import { attachmentsRouter } from "./modules/attachments/attachments.controller";
 import { authRouter } from "./modules/auth/auth.controller";
+import { commentsRouter } from "./modules/comments/comments.controller";
 import { dailyTasksRouter } from "./modules/dailyTasks/dailyTasks.controller";
 import { epicWinsRouter } from "./modules/epicWins/epicWins.controller";
 import { friendsRouter } from "./modules/friends/friends.controller";
@@ -34,6 +36,8 @@ app.use("/leaderboard", leaderboardRouter);
 app.use("/timeline", timelineRouter);
 app.use("/coach", coachRouter);
 app.use("/journal", journalRouter);
+app.use("/comments", commentsRouter);
+app.use("/attachments", attachmentsRouter);
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
