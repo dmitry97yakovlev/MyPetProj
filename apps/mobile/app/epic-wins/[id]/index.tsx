@@ -6,6 +6,7 @@ import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { ProgressBar } from "../../../src/components/ProgressBar";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
+import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
 import { formatDeadline, isOverdue } from "../../../src/lib/date";
 import { useApi } from "../../../src/lib/useApi";
@@ -28,6 +29,7 @@ export default function EpicWinDetailScreen() {
   const { refreshCharacter, refreshEpicWins } = useGamification();
   const [epicWin, setEpicWin] = useState<EpicWinDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedQuestId, setExpandedQuestId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -89,27 +91,51 @@ export default function EpicWinDetailScreen() {
 
           <Button label="+ Добавить квест" onPress={() => router.push(`/epic-wins/${id}/quests/new`)} />
           <Text style={styles.sectionTitle}>Квесты</Text>
+          <Text style={styles.hint}>Разверни квест, чтобы увидеть неделю выполнения по каждой задаче.</Text>
         </View>
       }
       ListEmptyComponent={!loading ? <Text style={styles.emptyText}>Квестов пока нет.</Text> : null}
-      renderItem={({ item: quest }) => (
-        <Pressable onPress={() => router.push(`/quests/${quest.id}`)}>
+      renderItem={({ item: quest }) => {
+        const expanded = expandedQuestId === quest.id;
+        return (
           <Card style={styles.questCard}>
-            <View style={styles.questHeader}>
-              <Text style={styles.questTitle}>{quest.title}</Text>
-              <Text style={styles.questStatus}>{QUEST_STATUS_LABEL[quest.status]}</Text>
-            </View>
-            {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
-            {quest.deadline ? (
-              <Text style={[styles.deadline, isOverdue(quest.deadline) && styles.deadlineOverdue]}>
-                Дедлайн: {formatDeadline(quest.deadline)}
-                {isOverdue(quest.deadline) && quest.status === "ACTIVE" ? " · просрочено" : ""}
+            <Pressable onPress={() => setExpandedQuestId(expanded ? null : quest.id)}>
+              <View style={styles.questHeader}>
+                <Text style={styles.questTitle}>
+                  {expanded ? "▾" : "▸"} {quest.title}
+                </Text>
+                <Text style={styles.questStatus}>{QUEST_STATUS_LABEL[quest.status]}</Text>
+              </View>
+              {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
+              {quest.deadline ? (
+                <Text style={[styles.deadline, isOverdue(quest.deadline) && styles.deadlineOverdue]}>
+                  Дедлайн: {formatDeadline(quest.deadline)}
+                  {isOverdue(quest.deadline) && quest.status === "ACTIVE" ? " · просрочено" : ""}
+                </Text>
+              ) : null}
+              <Text style={styles.meta}>
+                {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"} · награда {quest.xpReward}{" "}
+                XP
               </Text>
+            </Pressable>
+
+            {expanded ? (
+              <View style={styles.expandedArea}>
+                {quest.dailyTasks.length === 0 ? (
+                  <Text style={styles.emptyTasksText}>Ежедневных задач пока нет.</Text>
+                ) : (
+                  quest.dailyTasks.map((task) => (
+                    <View key={task.id} style={styles.taskRow}>
+                      <Text style={styles.taskTitle}>{task.title}</Text>
+                      <WeeklyGrid days={task.last7Days} />
+                    </View>
+                  ))
+                )}
+                <Pressable onPress={() => router.push(`/quests/${quest.id}`)}>
+                  <Text style={styles.openLink}>Открыть квест →</Text>
+                </Pressable>
+              </View>
             ) : null}
-            <Text style={styles.meta}>
-              {quest.dailyTasks.length} {quest.dailyTasks.length === 1 ? "задача" : "задач"} · награда {quest.xpReward}{" "}
-              XP
-            </Text>
 
             {quest.status === "ACTIVE" ? (
               <View style={styles.questActions}>
@@ -122,8 +148,8 @@ export default function EpicWinDetailScreen() {
               </View>
             ) : null}
           </Card>
-        </Pressable>
-      )}
+        );
+      }}
     />
   );
 }
@@ -146,10 +172,12 @@ function useStyles() {
         sectionTitle: {
           fontSize: typography.sizeLg,
           fontWeight: typography.weightBold,
+          fontFamily: theme.headingFontFamily,
           color: theme.colors.ink,
           marginTop: spacing.lg,
-          marginBottom: spacing.sm,
+          marginBottom: spacing.xs,
         },
+        hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginBottom: spacing.sm },
         emptyText: { color: theme.colors.muted, marginTop: spacing.md },
         questCard: { marginBottom: spacing.md },
         questHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
@@ -157,6 +185,16 @@ function useStyles() {
         questStatus: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.muted },
         questDescription: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.xs },
         meta: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.sm },
+        expandedArea: {
+          marginTop: spacing.md,
+          paddingTop: spacing.md,
+          borderTopWidth: 1,
+          borderTopColor: theme.colors.muted,
+        },
+        emptyTasksText: { fontSize: typography.sizeSm, color: theme.colors.muted },
+        taskRow: { marginBottom: spacing.md },
+        taskTitle: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink },
+        openLink: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.accent, marginTop: spacing.xs },
         questActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
         questActionButton: { flex: 1 },
       }),

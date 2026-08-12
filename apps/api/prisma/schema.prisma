@@ -27,6 +27,8 @@ model User {
   epicWinMemberships EpicWinMember[]
   taskCompletions    TaskCompletion[]
   inventoryItems     InventoryItem[]
+  journalEntries     JournalEntry[]
+  moodEntries        MoodEntry[]
   sentFriendRequests     FriendRequest[] @relation("FriendRequestsSent")
   receivedFriendRequests FriendRequest[] @relation("FriendRequestsReceived")
 
@@ -66,12 +68,9 @@ model Character {
   hp    Int @default(100)
   maxHp Int @default(100)
 
-  // Графическое отображение персонажа — эмодзи-иконка (выбирается из фикс. набора в UI).
-  avatarIcon String @default("🧙")
-
-  // Прогресс к следующему предмету экипировки (см. ITEM_PROGRESS_THRESHOLD в character.service.ts).
-  // Растёт за завершение квестов; при достижении порога выдаётся случайный предмет и остаток переносится.
-  itemProgress Int @default(0)
+  // Графическое отображение персонажа — id полноростового персонажа из фикс.
+  // набора (см. AVATAR_CHARACTERS в packages/shared), не эмодзи.
+  avatarIcon String @default("arthas")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -82,6 +81,8 @@ model Character {
 enum ItemSlot {
   WEAPON
   ARMOR
+  RING
+  NECKLACE
   TRINKET
 }
 
@@ -183,6 +184,11 @@ model Quest {
   // Награда персонажу, выполнившему квест (в очках опыта).
   xpReward    Int         @default(50)
   position    Int         @default(0)
+  // "Вес" квеста в днях — на сколько сегментов и какого размера делится
+  // таймлайн-полоска прогресса Эпика (см. epicWins.service.ts). Не строгий
+  // дедлайн, а прикидка длительности: квест на 30 дней займёт на полоске
+  // втрое больше места, чем квест на 10 дней.
+  estimatedDays Int @default(1)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -190,6 +196,13 @@ model Quest {
   dailyTasks DailyTask[]
 
   @@map("quests")
+}
+
+enum DailyTaskCategory {
+  MANDATORY
+  OPTIONAL
+  SMALL
+  SUDDEN
 }
 
 model DailyTask {
@@ -201,6 +214,8 @@ model DailyTask {
   // Плоская награда — используется, когда unit не задан (обычная задача-чекбокс).
   xpReward    Int     @default(10)
   isActive    Boolean @default(true)
+  // Группа для отображения на экране "Сегодня" (см. journal.service.ts todayTasksByCategory).
+  category DailyTaskCategory @default(MANDATORY)
 
   // Если заданы оба поля — задача "по количеству": пользователь при выполнении
   // вводит количество (например, км), а награда считается как quantity * xpPerUnit
@@ -252,4 +267,49 @@ model Session {
   lastUsedAt DateTime @default(now())
 
   @@map("sessions")
+}
+
+enum JournalEntryKind {
+  TEXT
+  VOICE
+}
+
+// Дневник: свободные записи-мысли пользователя (текст или голос) — не
+// связаны с задачами/квестами напрямую. Автоматически залогированные
+// выполнения задач/квестов/эпиков за день вычисляются на лету в
+// journal.service.ts, а не хранятся здесь отдельными записями.
+model JournalEntry {
+  id     String           @id @default(uuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind   JournalEntryKind @default(TEXT)
+
+  // Текст мысли (TEXT) или необязательная подпись к голосовой записи (VOICE).
+  content String?
+  // Относительный путь к аудиофайлу на сервере (только для kind=VOICE).
+  audioUrl String?
+
+  // Календарный день записи (полночь UTC) — для группировки в UI по дням.
+  entryDate DateTime
+  createdAt DateTime @default(now())
+
+  @@map("journal_entries")
+}
+
+// Дневная самооценка эмоциональной стабильности (1..10) — не диагностика,
+// просто личный трекер настроения, одна запись в день, перезаписывается при
+// повторной отметке в тот же день.
+model MoodEntry {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  score Int // 1..10
+  date  DateTime // полночь UTC — календарный день
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@map("mood_entries")
 }

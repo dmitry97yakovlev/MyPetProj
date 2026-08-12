@@ -1,6 +1,7 @@
 import { Link, router } from "expo-router";
 import { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import { BackgroundPicker } from "../src/components/BackgroundPicker";
 import { Button } from "../src/components/Button";
 import { Checkbox } from "../src/components/Checkbox";
 import { ScreenTitle } from "../src/components/ScreenTitle";
@@ -39,6 +40,7 @@ export default function LoginScreen() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={styles.screen}>
           <ThemeSwitcher />
+          <BackgroundPicker />
           <ScreenTitle style={styles.title}>Вход</ScreenTitle>
 
           <TextField

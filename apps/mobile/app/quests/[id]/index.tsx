@@ -5,6 +5,7 @@ import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View 
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { ScreenTitle } from "../../../src/components/ScreenTitle";
+import { WeeklyGrid } from "../../../src/components/WeeklyGrid";
 import { useGamification } from "../../../src/features/gamification/GamificationContext";
 import { useApi } from "../../../src/lib/useApi";
 import { useAuthedFocusEffect } from "../../../src/lib/useAuthedFocusEffect";
@@ -142,6 +143,7 @@ export default function QuestDetailScreen() {
                   </Text>
                 ) : null}
                 {quantityErrors[task.id] ? <Text style={styles.error}>{quantityErrors[task.id]}</Text> : null}
+                <WeeklyGrid days={task.last7Days} />
               </View>
             </View>
           </Card>

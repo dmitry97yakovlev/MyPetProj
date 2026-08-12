@@ -21,6 +21,7 @@ function useStyles() {
         title: {
           fontSize: typography.sizeXl,
           fontWeight: "900",
+          fontFamily: theme.headingFontFamily,
           color: theme.colors.primary,
           textTransform: "uppercase",
           letterSpacing: 1,

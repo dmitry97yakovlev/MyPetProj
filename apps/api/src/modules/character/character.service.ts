@@ -1,14 +1,17 @@
-import { AVATAR_ICONS } from "@mypetproj/shared";
-import type { CharacterDto, InventoryItemDto, ItemDto, ItemSlot } from "@mypetproj/shared";
+import { AVATAR_CHARACTER_IDS } from "@mypetproj/shared";
+import type { CharacterDto, InventoryItemDto, ItemDto, ItemRarity, ItemSlot } from "@mypetproj/shared";
 import type { Character, InventoryItem, Item } from "@prisma/client";
 import { prisma } from "../../db";
 import { AppError } from "../../errors";
 import { applyLevelBonus, applyXpGain, xpToNextLevel } from "./leveling";
 
-/** Сколько итем-прогресса нужно набрать, чтобы выпал случайный предмет экипировки. */
-export const ITEM_PROGRESS_THRESHOLD = 100;
-/** Сколько итем-прогресса даёт завершение одного квеста (4 квеста ≈ 1 предмет). */
-export const ITEM_PROGRESS_PER_QUEST = 25;
+const EMPTY_EQUIPPED: Record<ItemSlot, ItemDto | null> = {
+  WEAPON: null,
+  ARMOR: null,
+  RING: null,
+  NECKLACE: null,
+  TRINKET: null,
+};
 
 function toItemDto(item: Item): ItemDto {
   return { id: item.id, name: item.name, slot: item.slot, rarity: item.rarity, icon: item.icon, bonusHp: item.bonusHp };
@@ -42,7 +45,7 @@ export async function getCharacterDto(userId: string): Promise<CharacterDto> {
     orderBy: { acquiredAt: "asc" },
   });
 
-  const equipped: Record<ItemSlot, ItemDto | null> = { WEAPON: null, ARMOR: null, TRINKET: null };
+  const equipped = { ...EMPTY_EQUIPPED };
   for (const entry of inventory) {
     if (entry.equipped) equipped[entry.item.slot] = toItemDto(entry.item);
   }
@@ -54,8 +57,6 @@ export async function getCharacterDto(userId: string): Promise<CharacterDto> {
     hp: character.hp,
     maxHp: character.maxHp,
     avatarIcon: character.avatarIcon,
-    itemProgress: character.itemProgress,
-    itemProgressToNext: ITEM_PROGRESS_THRESHOLD,
     inventory: inventory.map(toInventoryItemDto),
     equipped,
   };
@@ -105,41 +106,62 @@ export async function applyDamage(userId: string, amount: number): Promise<Chara
 }
 
 /**
- * Начисляет прогресс к следующему предмету экипировки; при достижении
- * порога выдаёт случайный ещё не полученный предмет (остаток прогресса
- * переносится на следующий). Если каталог полностью собран — прогресс
- * просто копится сверх порога, ничего не выдаём (не из чего выбирать).
+ * Веса редкости в зависимости от "качества" выполнения квеста (0..1, см.
+ * computeQuestPerformanceScore в quests.service.ts): чем выше score — тем
+ * больше шанс на редкую/эпическую/легендарную вещь. При score=0 почти
+ * гарантирован COMMON, при score=1 неплохой шанс на LEGENDARY.
  */
-export async function grantItemProgress(userId: string, amount: number): Promise<void> {
-  if (amount <= 0) return;
-  await getOrCreateCharacter(userId);
+function rarityWeights(performanceScore: number): Record<ItemRarity, number> {
+  const score = Math.max(0, Math.min(1, performanceScore));
+  return {
+    COMMON: Math.max(0.05, 1 - score),
+    RARE: 0.35,
+    EPIC: score * 0.6,
+    LEGENDARY: Math.max(0, score - 0.5) * 0.8,
+  };
+}
 
-  const character = await prisma.character.update({
-    where: { userId },
-    data: { itemProgress: { increment: amount } },
-  });
+function pickWeighted<T extends string>(weights: Record<T, number>): T {
+  const entries = Object.entries(weights) as [T, number][];
+  const total = entries.reduce((sum, [, w]) => sum + w, 0);
+  let roll = Math.random() * total;
+  for (const [key, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return key;
+  }
+  return entries[entries.length - 1][0];
+}
 
-  if (character.itemProgress < ITEM_PROGRESS_THRESHOLD) return;
-
+/**
+ * Выдаёт предмет экипировки за завершённый квест — качество (редкость)
+ * зависит от того, насколько хорошо квест был выполнен (см.
+ * computeQuestPerformanceScore). Слот и конкретный предмет — случайные среди
+ * ещё не полученных того же уровня редкости; если такого не осталось —
+ * берём любой ещё не полученный; если коллекция уже полная — просто
+ * начисляем немного бонусного XP взамен.
+ */
+export async function awardQuestItem(userId: string, performanceScore: number): Promise<void> {
   const owned = await prisma.inventoryItem.findMany({ where: { userId }, select: { itemId: true } });
   const ownedIds = new Set(owned.map((o) => o.itemId));
-  const candidates = await prisma.item.findMany({ where: { id: { notIn: [...ownedIds] } } });
 
-  if (candidates.length === 0) return;
+  const rarity = pickWeighted(rarityWeights(performanceScore));
+  let candidates = await prisma.item.findMany({ where: { rarity, id: { notIn: [...ownedIds] } } });
+  if (candidates.length === 0) {
+    candidates = await prisma.item.findMany({ where: { id: { notIn: [...ownedIds] } } });
+  }
+
+  if (candidates.length === 0) {
+    await grantXp(userId, 15);
+    return;
+  }
 
   const picked = candidates[Math.floor(Math.random() * candidates.length)];
-  await prisma.$transaction([
-    prisma.inventoryItem.create({ data: { userId, itemId: picked.id } }),
-    prisma.character.update({
-      where: { userId },
-      data: { itemProgress: { decrement: ITEM_PROGRESS_THRESHOLD } },
-    }),
-  ]);
+  await prisma.inventoryItem.create({ data: { userId, itemId: picked.id } });
 }
 
 export async function setAvatarIcon(userId: string, icon: string): Promise<CharacterDto> {
-  if (!(AVATAR_ICONS as readonly string[]).includes(icon)) {
-    throw new AppError(400, "Недопустимая иконка аватара");
+  if (!(AVATAR_CHARACTER_IDS as string[]).includes(icon)) {
+    throw new AppError(400, "Недопустимый персонаж");
   }
   await getOrCreateCharacter(userId);
   await prisma.character.update({ where: { userId }, data: { avatarIcon: icon } });

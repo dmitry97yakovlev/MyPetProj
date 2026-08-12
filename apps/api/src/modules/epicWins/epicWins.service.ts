@@ -45,6 +45,12 @@ function toSummaryDto(epicWin: EpicWinWithRelations, viewerId: string): EpicWinS
     questCount: epicWin.quests.length,
     memberCount: epicWin.members.length,
     isOwner: epicWin.ownerId === viewerId,
+    quests: epicWin.quests.map((q) => ({
+      id: q.id,
+      title: q.title,
+      status: q.status,
+      estimatedDays: q.estimatedDays,
+    })),
   };
 }
 

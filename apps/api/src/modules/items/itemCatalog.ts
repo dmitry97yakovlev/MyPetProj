@@ -46,9 +46,40 @@ export const ITEM_CATALOG: CatalogItem[] = [
     icon: "💀",
     bonusHp: 25,
   },
-  // Аксессуары
+  // Кольца
+  { id: "ring-common-copper-band", name: "Медное кольцо", slot: "RING", rarity: "COMMON", icon: "⭕", bonusHp: 0 },
+  { id: "ring-rare-frost-band", name: "Ледяное кольцо", slot: "RING", rarity: "RARE", icon: "💍", bonusHp: 5 },
+  { id: "ring-epic-arcane-band", name: "Кольцо тайной магии", slot: "RING", rarity: "EPIC", icon: "🔮", bonusHp: 10 },
+  {
+    id: "ring-legendary-lich-band",
+    name: "Кольцо Короля-лича",
+    slot: "RING",
+    rarity: "LEGENDARY",
+    icon: "🖤",
+    bonusHp: 20,
+  },
+  // Ожерелья
+  { id: "necklace-common-bone", name: "Костяное ожерелье", slot: "NECKLACE", rarity: "COMMON", icon: "🦴", bonusHp: 0 },
+  { id: "necklace-rare-emerald", name: "Изумрудное ожерелье", slot: "NECKLACE", rarity: "RARE", icon: "📿", bonusHp: 5 },
+  {
+    id: "necklace-epic-runed",
+    name: "Рунное ожерелье",
+    slot: "NECKLACE",
+    rarity: "EPIC",
+    icon: "🔱",
+    bonusHp: 10,
+  },
+  {
+    id: "necklace-legendary-nordskol",
+    name: "Сердце Нордскола",
+    slot: "NECKLACE",
+    rarity: "LEGENDARY",
+    icon: "❤️‍🔥",
+    bonusHp: 20,
+  },
+  // Аксессуары (тринкеты)
   { id: "trinket-common-lucky-charm", name: "Амулет удачи", slot: "TRINKET", rarity: "COMMON", icon: "🍀", bonusHp: 0 },
-  { id: "trinket-rare-power-ring", name: "Кольцо силы", slot: "TRINKET", rarity: "RARE", icon: "💍", bonusHp: 5 },
+  { id: "trinket-rare-hourglass", name: "Песочные часы времени", slot: "TRINKET", rarity: "RARE", icon: "⏳", bonusHp: 5 },
   {
     id: "trinket-epic-crown",
     name: "Корона стойкости",
@@ -58,11 +89,11 @@ export const ITEM_CATALOG: CatalogItem[] = [
     bonusHp: 10,
   },
   {
-    id: "trinket-legendary-heart",
-    name: "Сердце Нордскола",
+    id: "trinket-legendary-phylactery",
+    name: "Филактерия личности",
     slot: "TRINKET",
     rarity: "LEGENDARY",
-    icon: "❤️‍🔥",
-    bonusHp: 15,
+    icon: "💎",
+    bonusHp: 20,
   },
 ];

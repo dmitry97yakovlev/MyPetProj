@@ -43,3 +43,12 @@ export const hardShadow = {
   shadowOffset: { width: 4, height: 4 },
   elevation: 4,
 };
+
+/** "#RRGGBB" → "rgba(r,g,b,alpha)" — для настраиваемой прозрачности панелей (см. ThemeContext.panelOpacity). */
+export function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+}

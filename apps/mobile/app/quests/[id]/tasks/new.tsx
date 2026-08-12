@@ -1,20 +1,24 @@
+import type { DailyTaskCategory } from "@mypetproj/shared";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Button } from "../../../../src/components/Button";
 import { Checkbox } from "../../../../src/components/Checkbox";
 import { ScreenTitle } from "../../../../src/components/ScreenTitle";
 import { TextField } from "../../../../src/components/TextField";
+import { CATEGORY_LABEL, CATEGORY_ORDER } from "../../../../src/lib/dailyTaskCategory";
 import { useApi } from "../../../../src/lib/useApi";
 import { useTheme } from "../../../../src/theme/ThemeContext";
-import { spacing, typography } from "../../../../src/theme/tokens";
+import { borderWidth, spacing, typography } from "../../../../src/theme/tokens";
 
 export default function NewDailyTaskScreen() {
   const { id: questId } = useLocalSearchParams<{ id: string }>();
   const api = useApi();
+  const { theme } = useTheme();
   const styles = useStyles();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [category, setCategory] = useState<DailyTaskCategory>("MANDATORY");
   const [isQuantified, setIsQuantified] = useState(false);
   const [unit, setUnit] = useState("");
   const [xpPerUnit, setXpPerUnit] = useState("");
@@ -31,6 +35,7 @@ export default function NewDailyTaskScreen() {
     const payload: Record<string, unknown> = {
       title: title.trim(),
       description: description.trim() || undefined,
+      category,
     };
 
     if (isQuantified) {
@@ -73,6 +78,25 @@ export default function NewDailyTaskScreen() {
           multiline
         />
 
+        <Text style={styles.label}>Категория</Text>
+        <View style={styles.categoryRow}>
+          {CATEGORY_ORDER.map((value) => {
+            const active = value === category;
+            return (
+              <Pressable
+                key={value}
+                onPress={() => setCategory(value)}
+                style={[
+                  styles.categoryChip,
+                  { borderColor: theme.colors.ink, backgroundColor: active ? theme.colors.secondary : theme.colors.surface },
+                ]}
+              >
+                <Text style={styles.categoryChipText}>{CATEGORY_LABEL[value]}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <Checkbox
           label="Награда зависит от количества (например, км)"
           value={isQuantified}
@@ -110,6 +134,16 @@ function useStyles() {
         screen: { flexGrow: 1, padding: spacing.lg },
         title: { fontSize: typography.sizeXl, fontWeight: typography.weightBold, color: theme.colors.ink, marginBottom: spacing.sm },
         hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginBottom: spacing.lg },
+        label: {
+          fontWeight: typography.weightBold,
+          fontSize: typography.sizeSm,
+          textTransform: "uppercase",
+          marginBottom: spacing.xs,
+          color: theme.colors.ink,
+        },
+        categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs, marginBottom: spacing.md },
+        categoryChip: { borderWidth, paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+        categoryChipText: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink },
         error: { color: theme.colors.danger, marginBottom: spacing.md, fontWeight: "600" },
       }),
     [theme],

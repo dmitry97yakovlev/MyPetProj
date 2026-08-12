@@ -2,10 +2,23 @@ import { CompleteDailyTaskInputSchema, UpdateDailyTaskInputSchema } from "@mypet
 import { Router } from "express";
 import { asyncHandler } from "../../lib/asyncHandler";
 import { type AuthedRequest, requireAuth } from "../../middleware/requireAuth";
-import { completeDailyTask, deleteDailyTask, uncompleteDailyTask, updateDailyTask } from "./dailyTasks.service";
+import {
+  completeDailyTask,
+  deleteDailyTask,
+  listTodayTasks,
+  uncompleteDailyTask,
+  updateDailyTask,
+} from "./dailyTasks.service";
 
 export const dailyTasksRouter = Router();
 dailyTasksRouter.use(requireAuth);
+
+dailyTasksRouter.get(
+  "/today",
+  asyncHandler(async (req: AuthedRequest, res) => {
+    res.json(await listTodayTasks(req.userId!));
+  }),
+);
 
 dailyTasksRouter.patch(
   "/:id",

@@ -13,6 +13,9 @@ apps/mobile/web-build/
 # Prisma
 apps/api/prisma/dev.db
 
+# Загруженные пользователем файлы (голосовые заметки дневника) — не коммитим.
+apps/api/uploads/
+
 # OS
 .DS_Store
 Thumbs.db

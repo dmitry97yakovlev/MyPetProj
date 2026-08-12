@@ -34,7 +34,7 @@ export default function NewEpicWinScreen() {
       });
       router.replace(`/epic-wins/${created.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать Epic Win");
+      setError(err instanceof Error ? err.message : "Не удалось создать Эпик");
     } finally {
       setLoading(false);
     }
@@ -43,7 +43,7 @@ export default function NewEpicWinScreen() {
   return (
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.screen}>
-        <ScreenTitle style={styles.title}>Новая Epic Win</ScreenTitle>
+        <ScreenTitle style={styles.title}>Новый Эпик</ScreenTitle>
         <Text style={styles.hint}>
           Большая долгосрочная цель. Например: «Привести себя в форму» или «Выучить испанский».
         </Text>

@@ -22,6 +22,13 @@ async function seedItemCatalog() {
       update: { name: item.name, slot: item.slot, rarity: item.rarity, icon: item.icon, bonusHp: item.bonusHp },
     });
   }
+
+  // Удаляем из каталога позиции, которых больше нет в ITEM_CATALOG (переименования/замены).
+  // Если предмет кто-то уже получил — InventoryItem удалится каскадом (см. schema.prisma), это ок для dev-сида.
+  const currentIds = ITEM_CATALOG.map((item) => item.id);
+  const { count } = await prisma.item.deleteMany({ where: { id: { notIn: currentIds } } });
+  if (count > 0) console.log(`Удалено устаревших позиций каталога: ${count}`);
+
   console.log(`Каталог предметов синхронизирован: ${ITEM_CATALOG.length} шт.`);
 }
 

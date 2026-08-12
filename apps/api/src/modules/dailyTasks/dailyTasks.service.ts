@@ -1,4 +1,4 @@
-import type { CreateDailyTaskInput, DailyTaskDto, UpdateDailyTaskInput } from "@mypetproj/shared";
+import type { CreateDailyTaskInput, DailyTaskDto, TodayTaskDto, UpdateDailyTaskInput } from "@mypetproj/shared";
 import type { DailyTask, TaskCompletion } from "@prisma/client";
 import { prisma } from "../../db";
 import { AppError } from "../../errors";
@@ -44,6 +44,17 @@ function computeTaskXp(task: DailyTask, quantity: number | null | undefined): nu
   return task.xpReward;
 }
 
+/** Отметки за последние 7 календарных дней (UTC), от самого старого к сегодняшнему — для недельной сетки в UI. */
+function computeLast7Days(completions: { completedOn: Date }[]): boolean[] {
+  const days = new Set(completions.map((c) => isoDate(c.completedOn)));
+  const today = startOfUtcDay(new Date());
+  const result: boolean[] = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    result.push(days.has(isoDate(addUtcDays(today, -i))));
+  }
+  return result;
+}
+
 export function toDailyTaskDto(task: DailyTaskWithCompletions): DailyTaskDto {
   const { completedToday, streak } = computeStreak(task.completions);
   const todayIso = isoDate(startOfUtcDay(new Date()));
@@ -58,9 +69,11 @@ export function toDailyTaskDto(task: DailyTaskWithCompletions): DailyTaskDto {
     unit: task.unit,
     xpPerUnit: task.xpPerUnit,
     isActive: task.isActive,
+    category: task.category,
     completedToday,
     todayQuantity: todayCompletion?.quantity ?? null,
     streak,
+    last7Days: computeLast7Days(task.completions),
   };
 }
 
@@ -83,6 +96,7 @@ export async function createDailyTask(
       title: input.title,
       description: input.description ?? null,
       xpReward: input.xpReward ?? 10,
+      category: input.category ?? "MANDATORY",
       unit: input.unit ?? null,
       xpPerUnit: input.xpPerUnit ?? null,
     },
@@ -104,6 +118,7 @@ export async function updateDailyTask(
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.xpReward !== undefined ? { xpReward: input.xpReward } : {}),
       ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
       ...(input.unit !== undefined ? { unit: input.unit } : {}),
       ...(input.xpPerUnit !== undefined ? { xpPerUnit: input.xpPerUnit } : {}),
     },
@@ -157,6 +172,34 @@ export async function completeDailyTask(
   // Простая задача, уже отмеченная сегодня, или меньшее количество — идемпотентно, без изменений.
 
   return toDailyTaskDto(await loadWithCompletions(dailyTaskId, userId));
+}
+
+/**
+ * Все активные ежедневные задачи по всем активным квестам пользователя —
+ * для экрана "Сегодня" (группировка по category делается на клиенте).
+ */
+export async function listTodayTasks(userId: string): Promise<TodayTaskDto[]> {
+  const tasks = await prisma.dailyTask.findMany({
+    where: {
+      isActive: true,
+      quest: {
+        status: "ACTIVE",
+        epicWin: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+      },
+    },
+    include: {
+      completions: { where: { userId } },
+      quest: { include: { epicWin: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+
+  return tasks.map((task) => ({
+    ...toDailyTaskDto(task),
+    questTitle: task.quest.title,
+    epicWinId: task.quest.epicWinId,
+    epicWinTitle: task.quest.epicWin.title,
+  }));
 }
 
 /** Снимает отметку "выполнено сегодня" — на случай, если отметили по ошибке. XP назад не отбираем. */

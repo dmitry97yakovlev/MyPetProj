@@ -17,6 +17,7 @@ export default function NewQuestScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [deadline, setDeadline] = useState<string | null>(null);
+  const [estimatedDays, setEstimatedDays] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -26,12 +27,18 @@ export default function NewQuestScreen() {
       setError("Укажи название");
       return;
     }
+    const days = Number(estimatedDays.replace(",", "."));
+    if (estimatedDays.trim() && (!Number.isFinite(days) || days < 1)) {
+      setError("Длительность — целое число дней, минимум 1");
+      return;
+    }
     setLoading(true);
     try {
       await api.post(`/epic-wins/${epicWinId}/quests`, {
         title: title.trim(),
         description: description.trim() || undefined,
         deadline: toApiDeadline(deadline),
+        estimatedDays: estimatedDays.trim() ? Math.round(days) : undefined,
       });
       router.back();
     } catch (err) {
@@ -45,7 +52,7 @@ export default function NewQuestScreen() {
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.screen}>
         <ScreenTitle style={styles.title}>Новый квест</ScreenTitle>
-        <Text style={styles.hint}>Шаг на пути к Epic Win. Например: «Пробежать 5 км».</Text>
+        <Text style={styles.hint}>Шаг на пути к Эпику. Например: «Пробежать 5 км».</Text>
 
         <TextField label="Название" value={title} onChangeText={setTitle} placeholder="Пробежать 5 км" />
         <TextField
@@ -56,6 +63,17 @@ export default function NewQuestScreen() {
           multiline
         />
         <DeadlinePicker value={deadline} onChange={setDeadline} />
+        <TextField
+          label="Сколько дней это займёт (необязательно)"
+          value={estimatedDays}
+          onChangeText={setEstimatedDays}
+          placeholder="Например, 14"
+          keyboardType="numeric"
+        />
+        <Text style={styles.hint}>
+          Определяет размер сегмента этого квеста на таймлайн-полоске прогресса Эпика — длинные квесты займут на ней
+          больше места.
+        </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

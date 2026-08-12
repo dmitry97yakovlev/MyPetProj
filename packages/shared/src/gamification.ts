@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ---------- Equipment ----------
 
-export const ItemSlotValues = ["WEAPON", "ARMOR", "TRINKET"] as const;
+export const ItemSlotValues = ["WEAPON", "ARMOR", "RING", "NECKLACE", "TRINKET"] as const;
 export type ItemSlot = (typeof ItemSlotValues)[number];
 
 export const ItemRarityValues = ["COMMON", "RARE", "EPIC", "LEGENDARY"] as const;
@@ -33,12 +33,100 @@ export interface InventoryItemDto {
 }
 
 export const SetAvatarInputSchema = z.object({
-  icon: z.string().min(1).max(8),
+  icon: z.string().min(1).max(40),
 });
 export type SetAvatarInput = z.infer<typeof SetAvatarInputSchema>;
 
-/** Небольшой фиксированный набор эмодзи-аватаров на выбор — см. AVATAR_ICONS в character.service.ts (backend) / AVATAR_ICONS в мобильном коде. */
-export const AVATAR_ICONS = ["🧙", "🧝", "🧛", "🥷", "🦸", "🧟", "🐉", "🦾"] as const;
+/** Персонаж на выбор — полноростовая иллюстрация вместо эмодзи-иконки. */
+export interface AvatarCharacter {
+  id: string;
+  name: string;
+  imageUrl: string;
+  /** Франшиза — для группировки в UI выбора персонажа. */
+  franchise: string;
+}
+
+/**
+ * Фиксированный набор персонажей на выбор (внешние ссылки на иллюстрации,
+ * не встраиваем файлы в репозиторий). `Character.avatarIcon` хранит id
+ * одного из них — см. character.service.ts (backend) и getAvatarCharacter
+ * (мобильный код) для резолва id → картинка с фолбэком на первого.
+ */
+export const AVATAR_CHARACTERS: AvatarCharacter[] = [
+  {
+    id: "jaina",
+    name: "Джайна",
+    franchise: "Warcraft III",
+    imageUrl: "https://images6.alphacoders.com/984/thumb-1920-984499.png",
+  },
+  {
+    id: "sylvanas",
+    name: "Сильвана",
+    franchise: "Warcraft III",
+    imageUrl: "https://images8.alphacoders.com/610/thumb-1920-610742.jpg",
+  },
+  {
+    id: "tyrande",
+    name: "Тиранда",
+    franchise: "Warcraft III",
+    imageUrl: "https://images7.alphacoders.com/120/thumb-1920-1205637.jpg",
+  },
+  {
+    id: "alleria",
+    name: "Аллерия",
+    franchise: "Warcraft III",
+    imageUrl: "https://images6.alphacoders.com/138/thumb-1920-1383250.png",
+  },
+  {
+    id: "illidan",
+    name: "Иллидан",
+    franchise: "Warcraft III",
+    imageUrl: "https://images.alphacoders.com/839/thumb-1920-83953.jpg",
+  },
+  {
+    id: "thrall",
+    name: "Тралл",
+    franchise: "Warcraft III",
+    imageUrl: "https://images4.alphacoders.com/752/thumb-1920-752158.jpg",
+  },
+  {
+    id: "arthas",
+    name: "Артас",
+    franchise: "Warcraft III",
+    imageUrl: "https://images2.alphacoders.com/963/thumb-1920-963952.jpg",
+  },
+  {
+    id: "uther",
+    name: "Утер",
+    franchise: "Warcraft III",
+    imageUrl: "https://images5.alphacoders.com/555/thumb-1920-555051.jpg",
+  },
+  {
+    id: "geralt",
+    name: "Геральт",
+    franchise: "The Witcher",
+    imageUrl: "https://images5.alphacoders.com/643/thumb-1920-643094.jpg",
+  },
+  {
+    id: "lara",
+    name: "Лара Крофт",
+    franchise: "Tomb Raider",
+    imageUrl: "https://images6.alphacoders.com/423/thumb-1920-423181.jpg",
+  },
+  {
+    id: "kratos",
+    name: "Кратос",
+    franchise: "God of War",
+    imageUrl: "https://images5.alphacoders.com/410/thumb-1920-410051.jpg",
+  },
+  {
+    id: "aloy",
+    name: "Элой",
+    franchise: "Horizon",
+    imageUrl: "https://images3.alphacoders.com/985/thumb-1920-985629.jpg",
+  },
+];
+export const AVATAR_CHARACTER_IDS = AVATAR_CHARACTERS.map((c) => c.id);
 
 // ---------- Character ----------
 
@@ -51,9 +139,6 @@ export interface CharacterDto {
   hp: number;
   maxHp: number;
   avatarIcon: string;
-  /** Прогресс к следующему предмету экипировки. */
-  itemProgress: number;
-  itemProgressToNext: number;
   inventory: InventoryItemDto[];
   /** Экипированные предметы по слотам (null — слот пуст). */
   equipped: Record<ItemSlot, ItemDto | null>;
@@ -91,17 +176,28 @@ export interface EpicWinMemberDto {
   role: "OWNER" | "MEMBER";
 }
 
+/** Облегчённая версия квеста для витрины на главном экране — без ежедневных задач. */
+export interface QuestSummaryDto {
+  id: string;
+  title: string;
+  status: QuestStatus;
+  /** "Вес" квеста в днях — определяет ширину его сегмента на таймлайн-полоске Эпика. */
+  estimatedDays: number;
+}
+
 export interface EpicWinSummaryDto {
   id: string;
   title: string;
   description: string | null;
   deadline: string | null;
   status: EpicWinStatus;
-  /** 0..100, доля завершённых квестов. */
+  /** 0..100, доля завершённых квестов (по количеству, не по весу — для обратной совместимости). */
   progress: number;
   questCount: number;
   memberCount: number;
   isOwner: boolean;
+  /** Квесты для сегментированной таймлайн-полоски и вложенного списка на главном экране. */
+  quests: QuestSummaryDto[];
 }
 
 export interface EpicWinDetailDto extends EpicWinSummaryDto {
@@ -119,6 +215,8 @@ export const CreateQuestInputSchema = z.object({
   description: z.string().max(2000).optional(),
   deadline: z.string().datetime().optional(),
   xpReward: z.number().int().min(0).max(10000).optional(),
+  /** Прикидка длительности в днях — вес сегмента на таймлайн-полоске Эпика. */
+  estimatedDays: z.number().int().min(1).max(3650).optional(),
 });
 export type CreateQuestInput = z.infer<typeof CreateQuestInputSchema>;
 
@@ -127,6 +225,7 @@ export const UpdateQuestInputSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   deadline: z.string().datetime().nullable().optional(),
   xpReward: z.number().int().min(0).max(10000).optional(),
+  estimatedDays: z.number().int().min(1).max(3650).optional(),
 });
 export type UpdateQuestInput = z.infer<typeof UpdateQuestInputSchema>;
 
@@ -138,10 +237,14 @@ export interface QuestDto {
   deadline: string | null;
   status: QuestStatus;
   xpReward: number;
+  estimatedDays: number;
   dailyTasks: DailyTaskDto[];
 }
 
 // ---------- Daily task ----------
+
+export const DailyTaskCategoryValues = ["MANDATORY", "OPTIONAL", "SMALL", "SUDDEN"] as const;
+export type DailyTaskCategory = (typeof DailyTaskCategoryValues)[number];
 
 // Единица измерения и награда за единицу — вместе задают "задачу по количеству"
 // (например, "км" + 10 XP/км: пробежал 5 км → +50 XP). Оба поля вместе или
@@ -166,6 +269,7 @@ export const CreateDailyTaskInputSchema = z
     title: z.string().min(1, "Укажи название").max(200),
     description: z.string().max(2000).optional(),
     xpReward: z.number().int().min(0).max(1000).optional(),
+    category: z.enum(DailyTaskCategoryValues).optional(),
     ...quantifiedFields,
   })
   .superRefine(refineQuantifiedPair);
@@ -177,6 +281,7 @@ export const UpdateDailyTaskInputSchema = z
     description: z.string().max(2000).nullable().optional(),
     xpReward: z.number().int().min(0).max(1000).optional(),
     isActive: z.boolean().optional(),
+    category: z.enum(DailyTaskCategoryValues).optional(),
     unit: z.string().min(1).max(20).nullable().optional(),
     xpPerUnit: z.number().int().min(1).max(1000).nullable().optional(),
   })
@@ -202,6 +307,7 @@ export interface DailyTaskDto {
   description: string | null;
   xpReward: number;
   isActive: boolean;
+  category: DailyTaskCategory;
   /** Задана вместе с xpPerUnit → задача "по количеству" (например, "км"). */
   unit: string | null;
   xpPerUnit: number | null;
@@ -210,16 +316,30 @@ export interface DailyTaskDto {
   todayQuantity: number | null;
   /** Число дней подряд с выполнением, считая сегодня (если выполнено сегодня). */
   streak: number;
+  /** Отметки за последние 7 календарных дней, от самого старого к сегодняшнему — для недельной сетки в UI. */
+  last7Days: boolean[];
+}
+
+/** Задача в контексте экрана "Сегодня" — тот же DailyTaskDto + откуда она (для навигации и группировки). */
+export interface TodayTaskDto extends DailyTaskDto {
+  questTitle: string;
+  epicWinId: string;
+  epicWinTitle: string;
 }
 
 // ---------- Timeline ----------
 
-/** Квесты с дедлайном по всем моим Epic Win, отсортированные по дате. */
+export const TimelineEntryKindValues = ["QUEST", "EPIC_WIN"] as const;
+export type TimelineEntryKind = (typeof TimelineEntryKindValues)[number];
+
+/** Единая запись таймлайна — либо квест, либо сама Epic Win с дедлайном, отсортированные по дате. */
 export interface TimelineEntryDto {
-  questId: string;
-  questTitle: string;
+  kind: TimelineEntryKind;
+  /** questId либо epicWinId, в зависимости от kind. */
+  id: string;
+  title: string;
   epicWinId: string;
   epicWinTitle: string;
   deadline: string;
-  status: QuestStatus;
+  status: QuestStatus | EpicWinStatus;
 }

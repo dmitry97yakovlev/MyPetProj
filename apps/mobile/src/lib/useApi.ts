@@ -10,6 +10,7 @@ export function useApi() {
     () => ({
       get: <T>(path: string) => apiClient.get<T>(path, accessToken ?? undefined),
       post: <T>(path: string, body: unknown) => apiClient.post<T>(path, body, accessToken ?? undefined),
+      postForm: <T>(path: string, formData: FormData) => apiClient.postForm<T>(path, formData, accessToken ?? undefined),
       patch: <T>(path: string, body: unknown) => apiClient.patch<T>(path, body, accessToken ?? undefined),
       del: <T>(path: string) => apiClient.del<T>(path, accessToken ?? undefined),
     }),
