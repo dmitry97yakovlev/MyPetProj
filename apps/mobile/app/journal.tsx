@@ -238,7 +238,11 @@ export default function JournalScreen() {
               item.type === "entry" ? (
                 <Card key={`entry-${item.entry.id}`} style={styles.entryCard}>
                   {item.entry.kind === "VOICE" ? (
-                    <VoicePlayer audioUrl={item.entry.audioUrl} caption={item.entry.content} />
+                    <VoicePlayer
+                      audioUrl={item.entry.audioUrl}
+                      caption={item.entry.content}
+                      transcript={item.entry.transcript}
+                    />
                   ) : (
                     <Text style={styles.entryText}>{item.entry.content}</Text>
                   )}
@@ -261,7 +265,15 @@ export default function JournalScreen() {
   );
 }
 
-function VoicePlayer({ audioUrl, caption }: { audioUrl: string | null; caption: string | null }) {
+function VoicePlayer({
+  audioUrl,
+  caption,
+  transcript,
+}: {
+  audioUrl: string | null;
+  caption: string | null;
+  transcript: string | null;
+}) {
   const styles = useStyles();
   const [playing, setPlaying] = useState(false);
 
@@ -283,11 +295,14 @@ function VoicePlayer({ audioUrl, caption }: { audioUrl: string | null; caption: 
   }
 
   return (
-    <View style={styles.voiceRow}>
-      <Pressable onPress={onPlay} disabled={playing} style={styles.voiceButton}>
-        <Text style={styles.voiceButtonIcon}>{playing ? "▶️…" : "▶️"}</Text>
-      </Pressable>
-      <Text style={styles.entryText}>{caption || "Голосовая заметка"}</Text>
+    <View>
+      <View style={styles.voiceRow}>
+        <Pressable onPress={onPlay} disabled={playing} style={styles.voiceButton}>
+          <Text style={styles.voiceButtonIcon}>{playing ? "▶️…" : "▶️"}</Text>
+        </Pressable>
+        <Text style={styles.entryText}>{caption || "Голосовая заметка"}</Text>
+      </View>
+      {transcript ? <Text style={styles.transcriptText}>«{transcript}»</Text> : null}
     </View>
   );
 }
@@ -362,6 +377,13 @@ function useStyles() {
           justifyContent: "center",
         },
         voiceButtonIcon: { fontSize: typography.sizeSm },
+        transcriptText: {
+          fontSize: typography.sizeSm,
+          color: theme.colors.muted,
+          fontStyle: "italic",
+          marginTop: spacing.xs,
+          marginLeft: 44,
+        },
         autoRow: { flexDirection: "row", alignItems: "center", marginBottom: spacing.xs, paddingLeft: spacing.xs },
         autoIcon: { fontSize: typography.sizeMd, marginRight: spacing.sm },
         autoText: { fontSize: typography.sizeSm, color: theme.colors.muted, flexShrink: 1 },

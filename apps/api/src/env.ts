@@ -15,6 +15,11 @@ const EnvSchema = z.object({
   // в ID-токене — обычно Web client ID, даже при входе с мобильного клиента).
   // Пока не задан — /auth/google отвечает 501, а не падает.
   GOOGLE_CLIENT_ID: z.string().optional(),
+
+  // Расшифровка голосовых заметок дневника через Groq Whisper (бесплатный тариф,
+  // см. CLAUDE.md раздел 7). Пока не задан — голосовые заметки сохраняются без
+  // транскрипта, ничего не падает (см. journal.service.ts transcribeVoiceNote).
+  GROQ_API_KEY: z.string().optional(),
 });
 
 export const env = EnvSchema.parse(process.env);

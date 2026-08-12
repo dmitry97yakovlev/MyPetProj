@@ -153,6 +153,8 @@ export const CreateEpicWinInputSchema = z.object({
   title: z.string().min(1, "Укажи название").max(200),
   description: z.string().max(2000).optional(),
   deadline: z.string().datetime().optional(),
+  /** Выше число — выше в списке на главном экране; у первых трёх — медали. */
+  priority: z.number().int().min(0).max(1000).optional(),
 });
 export type CreateEpicWinInput = z.infer<typeof CreateEpicWinInputSchema>;
 
@@ -161,6 +163,7 @@ export const UpdateEpicWinInputSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   deadline: z.string().datetime().nullable().optional(),
   status: z.enum(EpicWinStatusValues).optional(),
+  priority: z.number().int().min(0).max(1000).optional(),
 });
 export type UpdateEpicWinInput = z.infer<typeof UpdateEpicWinInputSchema>;
 
@@ -196,6 +199,9 @@ export interface EpicWinSummaryDto {
   questCount: number;
   memberCount: number;
   isOwner: boolean;
+  priority: number;
+  /** 1..3 — место по приоритету среди активных Эпиков этого пользователя (для медалей 🥇🥈🥉), иначе null. */
+  rank: number | null;
   /** Квесты для сегментированной таймлайн-полоски и вложенного списка на главном экране. */
   quests: QuestSummaryDto[];
 }
@@ -318,6 +324,8 @@ export interface DailyTaskDto {
   streak: number;
   /** Отметки за последние 7 календарных дней, от самого старого к сегодняшнему — для недельной сетки в UI. */
   last7Days: boolean[];
+  /** Когда задача создана — используется для группировки по неделям, если задач в квесте много. */
+  createdAt: string;
 }
 
 /** Задача в контексте экрана "Сегодня" — тот же DailyTaskDto + откуда она (для навигации и группировки). */

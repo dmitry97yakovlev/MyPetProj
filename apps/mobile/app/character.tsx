@@ -1,7 +1,9 @@
 import { AVATAR_CHARACTERS, type CatalogItemDto, type ItemRarity, type ItemSlot } from "@mypetproj/shared";
+import { router } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
-import { Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Card } from "../src/components/Card";
+import { Character3DViewer } from "../src/components/Character3DViewer";
 import { CharacterPortrait } from "../src/components/CharacterPortrait";
 import { ProgressBar } from "../src/components/ProgressBar";
 import { ScreenTitle } from "../src/components/ScreenTitle";
@@ -124,13 +126,25 @@ export default function CharacterScreen() {
       contentContainerStyle={styles.content}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
     >
-      <CharacterPortrait
-        avatarIcon={character.avatarIcon}
-        equipped={character.equipped}
-        size="hero"
-        level={character.level}
-        name={user?.displayName || user?.email}
-      />
+      <Pressable onPress={() => (router.canGoBack() ? router.back() : router.replace("/home"))} style={styles.backRow}>
+        <Text style={styles.backText}>← Назад</Text>
+      </Pressable>
+
+      {Platform.OS === "web" ? (
+        <>
+          <Character3DViewer characterId={character.avatarIcon} equipped={character.equipped} />
+          <Text style={styles.level}>Уровень {character.level}</Text>
+          <Text style={styles.characterName}>{user?.displayName || user?.email}</Text>
+        </>
+      ) : (
+        <CharacterPortrait
+          avatarIcon={character.avatarIcon}
+          equipped={character.equipped}
+          size="hero"
+          level={character.level}
+          name={user?.displayName || user?.email}
+        />
+      )}
 
       <Card style={styles.card}>
         <Text style={styles.barLabel}>
@@ -247,6 +261,8 @@ function useStyles() {
         screen: { flex: 1, backgroundColor: theme.colors.background },
         content: { padding: spacing.lg },
         title: { fontSize: typography.sizeXl, fontWeight: typography.weightBold, color: theme.colors.ink, marginBottom: spacing.lg },
+        backRow: { alignSelf: "flex-start", marginBottom: spacing.sm },
+        backText: { fontSize: typography.sizeMd, fontWeight: "700", color: theme.colors.accent },
         card: { marginBottom: spacing.lg },
         portraitRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
         statsInfo: { flex: 1 },
@@ -256,7 +272,9 @@ function useStyles() {
           fontFamily: theme.headingFontFamily,
           color: theme.colors.ink,
           marginBottom: spacing.xs,
+          textAlign: "center",
         },
+        characterName: { fontSize: typography.sizeSm, color: theme.colors.muted, textAlign: "center", marginBottom: spacing.sm },
         barLabel: { fontSize: typography.sizeSm, fontWeight: "700", color: theme.colors.ink, marginBottom: spacing.xs },
         spacedLabel: { marginTop: spacing.sm },
         hint: { fontSize: typography.sizeSm, color: theme.colors.muted, marginTop: spacing.md },

@@ -34,7 +34,7 @@ function computeProgress(quests: { status: string }[]): number {
   return Math.round((completed / quests.length) * 100);
 }
 
-function toSummaryDto(epicWin: EpicWinWithRelations, viewerId: string): EpicWinSummaryDto {
+function toSummaryDto(epicWin: EpicWinWithRelations, viewerId: string, rank: number | null = null): EpicWinSummaryDto {
   return {
     id: epicWin.id,
     title: epicWin.title,
@@ -45,6 +45,8 @@ function toSummaryDto(epicWin: EpicWinWithRelations, viewerId: string): EpicWinS
     questCount: epicWin.quests.length,
     memberCount: epicWin.members.length,
     isOwner: epicWin.ownerId === viewerId,
+    priority: epicWin.priority,
+    rank,
     quests: epicWin.quests.map((q) => ({
       id: q.id,
       title: q.title,
@@ -71,9 +73,16 @@ export async function listMyEpicWins(userId: string): Promise<EpicWinSummaryDto[
   const epicWins = await prisma.epicWin.findMany({
     where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
     include: epicWinInclude(userId),
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
   });
-  return epicWins.map((e) => toSummaryDto(e, userId));
+
+  // Медали 🥇🥈🥉 — только для трёх активных Эпиков с наивысшим приоритетом,
+  // остальные (завершённые/в архиве) в ранжирование не участвуют.
+  let rankCounter = 0;
+  return epicWins.map((e) => {
+    const rank = e.status === "ACTIVE" && rankCounter < 3 ? ++rankCounter : null;
+    return toSummaryDto(e, userId, rank);
+  });
 }
 
 export async function createEpicWin(userId: string, input: CreateEpicWinInput): Promise<EpicWinDetailDto> {
@@ -83,6 +92,7 @@ export async function createEpicWin(userId: string, input: CreateEpicWinInput): 
       title: input.title,
       description: input.description ?? null,
       deadline: input.deadline ? new Date(input.deadline) : null,
+      priority: input.priority ?? 0,
       members: { create: { userId, role: "OWNER" } },
     },
     include: epicWinInclude(userId),
@@ -114,6 +124,7 @@ export async function updateEpicWin(
       ...(input.description !== undefined ? { description: input.description } : {}),
       ...(input.deadline !== undefined ? { deadline: input.deadline ? new Date(input.deadline) : null } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.priority !== undefined ? { priority: input.priority } : {}),
     },
     include: epicWinInclude(userId),
   });

@@ -16,6 +16,7 @@ export default function NewEpicWinScreen() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [deadline, setDeadline] = useState<string | null>(null);
+  const [priority, setPriority] = useState("0");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +32,7 @@ export default function NewEpicWinScreen() {
         title: title.trim(),
         description: description.trim() || undefined,
         deadline: toApiDeadline(deadline),
+        priority: Number(priority) || 0,
       });
       router.replace(`/epic-wins/${created.id}`);
     } catch (err) {
@@ -57,6 +59,14 @@ export default function NewEpicWinScreen() {
           multiline
         />
         <DeadlinePicker value={deadline} onChange={setDeadline} />
+        <TextField
+          label="Приоритет (необязательно)"
+          value={priority}
+          onChangeText={setPriority}
+          placeholder="0"
+          keyboardType="numeric"
+        />
+        <Text style={styles.hint}>Чем выше число, тем выше Эпик на главном экране. У первых трёх — медали.</Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

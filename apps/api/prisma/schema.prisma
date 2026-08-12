@@ -137,6 +137,8 @@ model EpicWin {
   description String?
   deadline    DateTime?
   status      EpicWinStatus @default(ACTIVE)
+  // Приоритет — выше число, выше в списке на главном экране; у первых трёх — медали.
+  priority    Int           @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -288,6 +290,9 @@ model JournalEntry {
   content String?
   // Относительный путь к аудиофайлу на сервере (только для kind=VOICE).
   audioUrl String?
+  // Автоматическая расшифровка голоса в текст (Groq Whisper, если настроен
+  // GROQ_API_KEY) — чтобы будущий AI-агент мог читать дневник целиком.
+  transcript String?
 
   // Календарный день записи (полночь UTC) — для группировки в UI по дням.
   entryDate DateTime

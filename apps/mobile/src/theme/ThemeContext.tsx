@@ -5,7 +5,7 @@ import { gtaTheme, THEMES, type ThemeKey, type ThemeTokens } from "./themes";
 const THEME_STORAGE_KEY = "mypetproj.themeKey";
 const BACKGROUND_STORAGE_KEY = "mypetproj.backgroundIndexByTheme";
 const PANEL_OPACITY_STORAGE_KEY = "mypetproj.panelOpacity";
-const DEFAULT_PANEL_OPACITY = 0.9;
+const DEFAULT_PANEL_OPACITY = 0.4;
 
 function isThemeKey(value: string | null): value is ThemeKey {
   return value !== null && value in THEMES;

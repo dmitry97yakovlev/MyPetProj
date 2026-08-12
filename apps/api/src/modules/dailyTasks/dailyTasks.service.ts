@@ -74,6 +74,7 @@ export function toDailyTaskDto(task: DailyTaskWithCompletions): DailyTaskDto {
     todayQuantity: todayCompletion?.quantity ?? null,
     streak,
     last7Days: computeLast7Days(task.completions),
+    createdAt: task.createdAt.toISOString(),
   };
 }
 

@@ -1,6 +1,9 @@
 import type { JournalDayDto, JournalEntryDto } from "@mypetproj/shared";
 import type { JournalEntry } from "@prisma/client";
+import fs from "node:fs";
+import path from "node:path";
 import { prisma } from "../../db";
+import { env } from "../../env";
 import { addUtcDays, isoDate, startOfUtcDay } from "../../lib/date";
 
 function toEntryDto(entry: JournalEntry): JournalEntryDto {
@@ -9,6 +12,7 @@ function toEntryDto(entry: JournalEntry): JournalEntryDto {
     kind: entry.kind,
     content: entry.content,
     audioUrl: entry.audioUrl,
+    transcript: entry.transcript,
     entryDate: isoDate(entry.entryDate),
     createdAt: entry.createdAt.toISOString(),
   };
@@ -21,9 +25,45 @@ export async function createTextEntry(userId: string, content: string): Promise<
   return toEntryDto(entry);
 }
 
+/**
+ * Расшифровывает голосовую заметку в текст через Groq Whisper (бесплатный
+ * тариф, OpenAI-совместимый эндпоинт) — чтобы в будущем AI-агент мог читать
+ * дневник целиком, а не только слушать аудио. Если GROQ_API_KEY не задан
+ * (см. env.ts) — тихо возвращает null, ничего не падает и не блокирует
+ * сохранение самой записи.
+ */
+async function transcribeVoiceNote(audioUrl: string, mimeType: string): Promise<string | null> {
+  if (!env.GROQ_API_KEY) return null;
+
+  try {
+    const absolutePath = path.join(process.cwd(), audioUrl);
+    const buffer = fs.readFileSync(absolutePath);
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: mimeType }), "voice");
+    form.append("model", "whisper-large-v3");
+
+    const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
+      body: form,
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { text?: string };
+    return data.text?.trim() || null;
+  } catch (err) {
+    console.error("Не удалось расшифровать голосовую заметку:", err);
+    return null;
+  }
+}
+
 export async function createVoiceEntry(userId: string, audioUrl: string, content?: string): Promise<JournalEntryDto> {
+  const ext = path.extname(audioUrl).toLowerCase();
+  const mimeType = ext === ".webm" ? "audio/webm" : "audio/m4a";
+  const transcript = await transcribeVoiceNote(audioUrl, mimeType);
+
   const entry = await prisma.journalEntry.create({
-    data: { userId, kind: "VOICE", audioUrl, content: content ?? null, entryDate: startOfUtcDay(new Date()) },
+    data: { userId, kind: "VOICE", audioUrl, content: content ?? null, transcript, entryDate: startOfUtcDay(new Date()) },
   });
   return toEntryDto(entry);
 }

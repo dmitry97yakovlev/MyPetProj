@@ -27,6 +27,8 @@ export interface JournalEntryDto {
   content: string | null;
   /** Относительный URL аудиофайла — только для kind=VOICE. */
   audioUrl: string | null;
+  /** Автоматическая расшифровка голоса в текст (если настроен провайдер) — только для kind=VOICE. */
+  transcript: string | null;
   /** Календарный день записи, YYYY-MM-DD. */
   entryDate: string;
   createdAt: string;
